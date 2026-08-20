@@ -1,0 +1,1165 @@
+package com.example.ui.components
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.model.*
+import com.example.ui.theme.*
+import com.example.viewmodel.KorvaViewModel
+import kotlin.math.*
+
+private object ViewportPathEngine {
+    val tempPath1 = Path()
+    val tempPath2 = Path()
+    val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+}
+
+private enum class TransformHandleType {
+    NONE,
+    BODY_MOVE,
+    ROTATION_KNOB,
+    CORNER_TL,
+    CORNER_TR,
+    CORNER_BR,
+    CORNER_BL,
+    EDGE_TOP,
+    EDGE_RIGHT,
+    EDGE_BOTTOM,
+    EDGE_LEFT,
+    PIVOT_KNOB
+}
+
+/**
+ * High-Performance World Matrix & Local Geometry Engine.
+ * Evaluates exact vertices, center offsets, bounding boxes, and handle anchors
+ * synchronized with scale, rotation, and pivot point.
+ */
+private data class ViewportLayerGeometry(
+    val origin: Offset,
+    val pTL: Offset,
+    val pTR: Offset,
+    val pBR: Offset,
+    val pBL: Offset,
+    val midTop: Offset,
+    val midRight: Offset,
+    val midBottom: Offset,
+    val midLeft: Offset,
+    val rotHandle: Offset,
+    val rotationRad: Double,
+    val rotationDeg: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val l0: Float,
+    val t0: Float,
+    val r0: Float,
+    val b0: Float,
+    val zoom: Float
+) {
+    fun localToWorld(local: Offset): Offset {
+        val cosA = cos(rotationRad).toFloat()
+        val sinA = sin(rotationRad).toFloat()
+        val wx = origin.x + local.x * cosA - local.y * sinA
+        val wy = origin.y + local.x * sinA + local.y * cosA
+        return Offset(wx, wy)
+    }
+
+    fun worldToLocal(world: Offset): Offset {
+        val dx = world.x - origin.x
+        val dy = world.y - origin.y
+        val cosA = cos(rotationRad).toFloat()
+        val sinA = sin(rotationRad).toFloat()
+        val u = dx * cosA + dy * sinA
+        val v = -dx * sinA + dy * cosA
+        return Offset(u, v)
+    }
+
+    fun isInsideBody(local: Offset): Boolean {
+        val sx = if (abs(scaleX) < 0.001f) 0.001f else scaleX
+        val sy = if (abs(scaleY) < 0.001f) 0.001f else scaleY
+        val uUnscaled = local.x / sx
+        val vUnscaled = local.y / sy
+        val minU = min(l0, r0) - 14f
+        val maxU = max(l0, r0) + 14f
+        val minV = min(t0, b0) - 14f
+        val maxV = max(t0, b0) + 14f
+        return (uUnscaled in minU..maxU) && (vUnscaled in minV..maxV)
+    }
+}
+
+private fun computeViewportGeometry(
+    layer: AnimationLayer,
+    transform: InterpolatedTransform,
+    stageCenterX: Float,
+    stageCenterY: Float,
+    zoom: Float
+): ViewportLayerGeometry {
+    val origin = Offset(stageCenterX + transform.x * zoom, stageCenterY + transform.y * zoom)
+    val layerW = layer.width * zoom
+    val layerH = layer.height * zoom
+
+    val l0 = -layerW * layer.pivotX
+    val t0 = -layerH * layer.pivotY
+    val r0 = l0 + layerW
+    val b0 = t0 + layerH
+
+    val pTL = Offset(l0 * transform.scaleX, t0 * transform.scaleY)
+    val pTR = Offset(r0 * transform.scaleX, t0 * transform.scaleY)
+    val pBR = Offset(r0 * transform.scaleX, b0 * transform.scaleY)
+    val pBL = Offset(l0 * transform.scaleX, b0 * transform.scaleY)
+
+    val midTop = Offset((pTL.x + pTR.x) / 2f, (pTL.y + pTR.y) / 2f)
+    val midRight = Offset((pTR.x + pBR.x) / 2f, (pTR.y + pBR.y) / 2f)
+    val midBottom = Offset((pBL.x + pBR.x) / 2f, (pBL.y + pBR.y) / 2f)
+    val midLeft = Offset((pTL.x + pBL.x) / 2f, (pTL.y + pBL.y) / 2f)
+
+    val dirY = if (transform.scaleY >= 0f) -1f else 1f
+    val rotHandle = Offset(midTop.x, midTop.y + dirY * 30f)
+
+    return ViewportLayerGeometry(
+        origin = origin,
+        pTL = pTL,
+        pTR = pTR,
+        pBR = pBR,
+        pBL = pBL,
+        midTop = midTop,
+        midRight = midRight,
+        midBottom = midBottom,
+        midLeft = midLeft,
+        rotHandle = rotHandle,
+        rotationRad = Math.toRadians(transform.rotation.toDouble()),
+        rotationDeg = transform.rotation,
+        scaleX = transform.scaleX,
+        scaleY = transform.scaleY,
+        l0 = l0,
+        t0 = t0,
+        r0 = r0,
+        b0 = b0,
+        zoom = zoom
+    )
+}
+
+/**
+ * Rebuilt Next-Gen 2D Animation Stage Viewport.
+ * Ultra-responsive 60/120fps hardware rendering, World-Matrix bound gizmo handles,
+ * non-blocking gesture manipulation, motion trajectories, and clean workspace.
+ */
+@Composable
+fun CanvasViewport(
+    viewModel: KorvaViewModel,
+    modifier: Modifier = Modifier
+) {
+    val project by viewModel.project.collectAsState()
+    val currentFrame by viewModel.currentFrame.collectAsState()
+    val selectedLayerId by viewModel.selectedLayerId.collectAsState()
+    val activeTool by viewModel.activeTool.collectAsState()
+    val zoom by viewModel.viewportZoom.collectAsState()
+    val pan by viewModel.viewportPan.collectAsState()
+    val onionSkinEnabled by viewModel.onionSkinEnabled.collectAsState()
+    val pastOnionCount by viewModel.onionSkinPastFrames.collectAsState()
+    val futureOnionCount by viewModel.onionSkinFutureFrames.collectAsState()
+    val gridVisible by viewModel.gridVisible.collectAsState()
+    val snapToGrid by viewModel.snapToGrid.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val showMotionTrajectory by viewModel.showMotionTrajectory.collectAsState()
+    val showSafeZones by viewModel.showSafeZones.collectAsState()
+    val showRuleOfThirds by viewModel.showRuleOfThirds.collectAsState()
+    val canvasBgMode by viewModel.canvasBgMode.collectAsState()
+
+    val selectedLayer = project.layers.find { it.id == selectedLayerId }
+    val selectedTransform = selectedLayer?.let { EasingFunctions.evaluateLayerAtFrame(it, currentFrame) }
+
+    var currentHandle by remember { mutableStateOf(TransformHandleType.NONE) }
+    var isDragging by remember { mutableStateOf(false) }
+    var liveTooltipText by remember { mutableStateOf("") }
+
+    // Magnetic snapping guides
+    var snapGuideX by remember { mutableStateOf<Float?>(null) }
+    var snapGuideY by remember { mutableStateOf<Float?>(null) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(StudioObsidianDark)
+            .clipToBounds()
+            .testTag("canvas_viewport")
+            .pointerInput(activeTool, selectedLayerId, currentFrame, zoom, pan, selectedTransform, snapToGrid) {
+                if (activeTool == EditorTool.HAND_PAN) {
+                    detectTransformGestures { _, panDelta, zoomDelta, _ ->
+                        viewModel.updateViewportPan(panDelta)
+                        viewModel.updateViewportZoom(zoomDelta)
+                    }
+                } else {
+                    detectDragGestures(
+                        onDragStart = { startOffset ->
+                            val stageCenterX = size.width / 2f + pan.x
+                            val stageCenterY = size.height / 2f + pan.y
+                            isDragging = true
+
+                            if (selectedLayer != null && selectedTransform != null && !isPlaying) {
+                                val geo = computeViewportGeometry(
+                                    layer = selectedLayer,
+                                    transform = selectedTransform,
+                                    stageCenterX = stageCenterX,
+                                    stageCenterY = stageCenterY,
+                                    zoom = zoom
+                                )
+
+                                val local = geo.worldToLocal(startOffset)
+                                val hitRadius = 32f
+
+                                // 1. Rotation knob
+                                if (hypot(local.x - geo.rotHandle.x, local.y - geo.rotHandle.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.ROTATION_KNOB
+                                    liveTooltipText = "∠ ${selectedTransform.rotation.toInt()}°"
+                                    return@detectDragGestures
+                                }
+
+                                // 2. Pivot Knob
+                                if (hypot(local.x, local.y) <= 24f && activeTool == EditorTool.PIVOT) {
+                                    currentHandle = TransformHandleType.PIVOT_KNOB
+                                    liveTooltipText = "Pivot: (${(selectedLayer.pivotX * 100).toInt()}%, ${(selectedLayer.pivotY * 100).toInt()}%)"
+                                    return@detectDragGestures
+                                }
+
+                                // 3. Corner scale handles (TL, TR, BR, BL)
+                                if (hypot(local.x - geo.pTL.x, local.y - geo.pTL.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.CORNER_TL
+                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.pTR.x, local.y - geo.pTR.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.CORNER_TR
+                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.pBR.x, local.y - geo.pBR.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.CORNER_BR
+                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.pBL.x, local.y - geo.pBL.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.CORNER_BL
+                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+
+                                // 4. Edge handles
+                                if (hypot(local.x - geo.midTop.x, local.y - geo.midTop.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.EDGE_TOP
+                                    liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.midRight.x, local.y - geo.midRight.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.EDGE_RIGHT
+                                    liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.midBottom.x, local.y - geo.midBottom.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.EDGE_BOTTOM
+                                    liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+                                if (hypot(local.x - geo.midLeft.x, local.y - geo.midLeft.y) <= hitRadius) {
+                                    currentHandle = TransformHandleType.EDGE_LEFT
+                                    liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                    return@detectDragGestures
+                                }
+
+                                // 5. Body move
+                                if (geo.isInsideBody(local)) {
+                                    currentHandle = TransformHandleType.BODY_MOVE
+                                    liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
+                                    return@detectDragGestures
+                                }
+                            }
+                            currentHandle = TransformHandleType.NONE
+                        },
+                        onDragEnd = {
+                            currentHandle = TransformHandleType.NONE
+                            isDragging = false
+                            snapGuideX = null
+                            snapGuideY = null
+                            liveTooltipText = ""
+                        },
+                        onDragCancel = {
+                            currentHandle = TransformHandleType.NONE
+                            isDragging = false
+                            snapGuideX = null
+                            snapGuideY = null
+                            liveTooltipText = ""
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+
+                            if (selectedLayer != null && selectedTransform != null) {
+                                val stageCenterX = size.width / 2f + pan.x
+                                val stageCenterY = size.height / 2f + pan.y
+                                val geo = computeViewportGeometry(
+                                    layer = selectedLayer,
+                                    transform = selectedTransform,
+                                    stageCenterX = stageCenterX,
+                                    stageCenterY = stageCenterY,
+                                    zoom = zoom
+                                )
+
+                                val cosA = cos(geo.rotationRad).toFloat()
+                                val sinA = sin(geo.rotationRad).toFloat()
+                                val deltaU = dragAmount.x * cosA + dragAmount.y * sinA
+                                val deltaV = -dragAmount.x * sinA + dragAmount.y * cosA
+
+                                val signX = if (selectedTransform.scaleX < 0f) -1f else 1f
+                                val signY = if (selectedTransform.scaleY < 0f) -1f else 1f
+
+                                when (currentHandle) {
+                                    TransformHandleType.ROTATION_KNOB -> {
+                                        val lx = geo.origin.x
+                                        val ly = geo.origin.y
+                                        val touchAngle = Math.toDegrees(atan2((change.position.y - ly).toDouble(), (change.position.x - lx).toDouble())).toFloat()
+                                        var adjustedAngle = (touchAngle + 90f + 360f) % 360f
+
+                                        if (snapToGrid) {
+                                            val nearest45 = (Math.round(adjustedAngle / 45.0) * 45).toFloat()
+                                            if (abs(adjustedAngle - nearest45) < 7f) {
+                                                adjustedAngle = nearest45
+                                            }
+                                        }
+
+                                        viewModel.addOrUpdateKeyframeOnCurrentFrame(rotation = adjustedAngle)
+                                        liveTooltipText = "∠ ${adjustedAngle.toInt()}°"
+                                    }
+                                    TransformHandleType.CORNER_BR -> {
+                                        val denomX = max(abs(geo.r0), 10f) * signX
+                                        val denomY = max(abs(geo.b0), 10f) * signY
+                                        val sX = 1f + (deltaU / denomX)
+                                        val sY = 1f + (deltaV / denomY)
+                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScale(factor)
+                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.CORNER_TR -> {
+                                        val denomX = max(abs(geo.r0), 10f) * signX
+                                        val denomY = max(abs(geo.t0), 10f) * signY
+                                        val sX = 1f + (deltaU / denomX)
+                                        val sY = 1f - (deltaV / denomY)
+                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScale(factor)
+                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.CORNER_TL -> {
+                                        val denomX = max(abs(geo.l0), 10f) * signX
+                                        val denomY = max(abs(geo.t0), 10f) * signY
+                                        val sX = 1f - (deltaU / denomX)
+                                        val sY = 1f - (deltaV / denomY)
+                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScale(factor)
+                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.CORNER_BL -> {
+                                        val denomX = max(abs(geo.l0), 10f) * signX
+                                        val denomY = max(abs(geo.b0), 10f) * signY
+                                        val sX = 1f - (deltaU / denomX)
+                                        val sY = 1f + (deltaV / denomY)
+                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScale(factor)
+                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.EDGE_RIGHT -> {
+                                        val denomX = max(abs(geo.r0), 10f) * signX
+                                        val sX = (1f + (deltaU / denomX)).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScaleAxis(sX, 1f)
+                                        liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.EDGE_LEFT -> {
+                                        val denomX = max(abs(geo.l0), 10f) * signX
+                                        val sX = (1f - (deltaU / denomX)).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScaleAxis(sX, 1f)
+                                        liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.EDGE_BOTTOM -> {
+                                        val denomY = max(abs(geo.b0), 10f) * signY
+                                        val sY = (1f + (deltaV / denomY)).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScaleAxis(1f, sY)
+                                        liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.EDGE_TOP -> {
+                                        val denomY = max(abs(geo.t0), 10f) * signY
+                                        val sY = (1f - (deltaV / denomY)).coerceIn(0.75f, 1.30f)
+                                        viewModel.applyCanvasScaleAxis(1f, sY)
+                                        liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                    }
+                                    TransformHandleType.PIVOT_KNOB -> {
+                                        val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
+                                        val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
+                                        viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
+                                        liveTooltipText = "Pivot: (${(newPx * 100).toInt()}%, ${(newPy * 100).toInt()}%)"
+                                    }
+                                    TransformHandleType.BODY_MOVE -> {
+                                        viewModel.applyCanvasTranslation(dragAmount)
+                                        val nearZeroX = abs(selectedTransform.x) < 8f
+                                        val nearZeroY = abs(selectedTransform.y) < 8f
+                                        snapGuideX = if (nearZeroX) 0f else null
+                                        snapGuideY = if (nearZeroY) 0f else null
+                                        liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
+                                    }
+                                    TransformHandleType.NONE -> {
+                                        when (activeTool) {
+                                            EditorTool.SELECT -> viewModel.applyCanvasTranslation(dragAmount)
+                                            EditorTool.ROTATE -> {
+                                                val rotDelta = (dragAmount.x - dragAmount.y) * 0.4f
+                                                viewModel.applyCanvasRotation(rotDelta)
+                                            }
+                                            EditorTool.SCALE -> {
+                                                val scaleStep = (dragAmount.x - dragAmount.y) * 0.008f
+                                                val scaleFactor = (1f + scaleStep).coerceIn(0.85f, 1.15f)
+                                                viewModel.applyCanvasScale(scaleFactor)
+                                            }
+                                            EditorTool.PIVOT -> {
+                                                val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
+                                                val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
+                                                viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
+                                            }
+                                            else -> {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(project.layers, currentFrame, zoom, pan) {
+                    detectTapGestures { tapOffset ->
+                        val stageCenterX = size.width / 2f + pan.x
+                        val stageCenterY = size.height / 2f + pan.y
+                        val sortedLayers = project.layers.filter { it.isVisible && !it.isLocked }.sortedByDescending { it.zIndex }
+
+                        for (layer in sortedLayers) {
+                            val transform = EasingFunctions.evaluateLayerAtFrame(layer, currentFrame)
+                            val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, zoom)
+                            val local = geo.worldToLocal(tapOffset)
+                            if (geo.isInsideBody(local)) {
+                                viewModel.selectLayer(layer.id)
+                                return@detectTapGestures
+                            }
+                        }
+                    }
+                }
+        ) {
+            val stageCenterX = size.width / 2f + pan.x
+            val stageCenterY = size.height / 2f + pan.y
+
+            // Resolution canvas bounds
+            val resWidth = (project.resolution.width.toFloat() * 0.5f) * zoom
+            val resHeight = (project.resolution.height.toFloat() * 0.5f) * zoom
+            val resLeft = stageCenterX - resWidth / 2f
+            val resTop = stageCenterY - resHeight / 2f
+
+            // 1. Draw Viewport Canvas Surface
+            when (canvasBgMode) {
+                0 -> {
+                    // Project Background Color
+                    drawRect(
+                        color = Color(project.backgroundColor),
+                        topLeft = Offset(resLeft, resTop),
+                        size = Size(resWidth, resHeight)
+                    )
+                }
+                1 -> {
+                    // Transparent Checkerboard
+                    drawRect(color = Color(0xFF1B202C), topLeft = Offset(resLeft, resTop), size = Size(resWidth, resHeight))
+                    val checkSize = 16f * zoom
+                    var cx = resLeft
+                    var row = 0
+                    while (cx < resLeft + resWidth) {
+                        var cy = resTop
+                        var col = row
+                        while (cy < resTop + resHeight) {
+                            if (col % 2 == 0) {
+                                drawRect(
+                                    color = Color(0xFF262D3D),
+                                    topLeft = Offset(cx, cy),
+                                    size = Size(min(checkSize, resLeft + resWidth - cx), min(checkSize, resTop + resHeight - cy))
+                                )
+                            }
+                            cy += checkSize
+                            col++
+                        }
+                        cx += checkSize
+                        row++
+                    }
+                }
+                2 -> {
+                    // Obsidian Dark Canvas
+                    drawRect(color = Color(0xFF0F1117), topLeft = Offset(resLeft, resTop), size = Size(resWidth, resHeight))
+                }
+                else -> {
+                    // Studio Light Canvas
+                    drawRect(color = Color(0xFFE2E8F0), topLeft = Offset(resLeft, resTop), size = Size(resWidth, resHeight))
+                }
+            }
+
+            // 2. Studio Grid Matrix
+            if (gridVisible) {
+                val gridSize = 32f * zoom
+                var gx = resLeft
+                while (gx <= resLeft + resWidth) {
+                    drawLine(
+                        color = StudioBorder.copy(alpha = 0.35f),
+                        start = Offset(gx, resTop),
+                        end = Offset(gx, resTop + resHeight),
+                        strokeWidth = 1f
+                    )
+                    gx += gridSize
+                }
+                var gy = resTop
+                while (gy <= resTop + resHeight) {
+                    drawLine(
+                        color = StudioBorder.copy(alpha = 0.35f),
+                        start = Offset(resLeft, gy),
+                        end = Offset(resLeft + resWidth, gy),
+                        strokeWidth = 1f
+                    )
+                    gy += gridSize
+                }
+            }
+
+            // 3. Cinematic Rule of Thirds
+            if (showRuleOfThirds) {
+                val thirdW = resWidth / 3f
+                val thirdH = resHeight / 3f
+                val guideColor = StudioCyan.copy(alpha = 0.45f)
+                drawLine(guideColor, Offset(resLeft + thirdW, resTop), Offset(resLeft + thirdW, resTop + resHeight), strokeWidth = 1f)
+                drawLine(guideColor, Offset(resLeft + thirdW * 2f, resTop), Offset(resLeft + thirdW * 2f, resTop + resHeight), strokeWidth = 1f)
+                drawLine(guideColor, Offset(resLeft, resTop + thirdH), Offset(resLeft + resWidth, resTop + thirdH), strokeWidth = 1f)
+                drawLine(guideColor, Offset(resLeft, resTop + thirdH * 2f), Offset(resLeft + resWidth, resTop + thirdH * 2f), strokeWidth = 1f)
+
+                val crossColor = StudioCyan.copy(alpha = 0.85f)
+                listOf(
+                    Offset(resLeft + thirdW, resTop + thirdH),
+                    Offset(resLeft + thirdW * 2f, resTop + thirdH),
+                    Offset(resLeft + thirdW, resTop + thirdH * 2f),
+                    Offset(resLeft + thirdW * 2f, resTop + thirdH * 2f)
+                ).forEach { pt ->
+                    drawCircle(crossColor, radius = 3.5f, center = pt)
+                }
+            }
+
+            // 4. Safe Zones (Action 90% & Title 80%)
+            if (showSafeZones) {
+                val actionW = resWidth * 0.90f
+                val actionH = resHeight * 0.90f
+                drawRect(
+                    color = StudioOrange.copy(alpha = 0.45f),
+                    topLeft = Offset(stageCenterX - actionW / 2f, stageCenterY - actionH / 2f),
+                    size = Size(actionW, actionH),
+                    style = Stroke(width = 1f, pathEffect = ViewportPathEngine.dashEffect)
+                )
+
+                val titleW = resWidth * 0.80f
+                val titleH = resHeight * 0.80f
+                drawRect(
+                    color = StudioCyan.copy(alpha = 0.55f),
+                    topLeft = Offset(stageCenterX - titleW / 2f, stageCenterY - titleH / 2f),
+                    size = Size(titleW, titleH),
+                    style = Stroke(width = 1f, pathEffect = ViewportPathEngine.dashEffect)
+                )
+            }
+
+            // 5. Origin Crosshair (0,0)
+            drawLine(
+                color = KorvaVioletLight.copy(alpha = 0.45f),
+                start = Offset(stageCenterX - 20f, stageCenterY),
+                end = Offset(stageCenterX + 20f, stageCenterY),
+                strokeWidth = 1.5f
+            )
+            drawLine(
+                color = KorvaVioletLight.copy(alpha = 0.45f),
+                start = Offset(stageCenterX, stageCenterY - 20f),
+                end = Offset(stageCenterX, stageCenterY + 20f),
+                strokeWidth = 1.5f
+            )
+
+            // 6. Magnetic Snap Visual Lines
+            if (snapGuideX != null) {
+                drawLine(
+                    color = StudioPink,
+                    start = Offset(stageCenterX, resTop),
+                    end = Offset(stageCenterX, resTop + resHeight),
+                    strokeWidth = 2f
+                )
+            }
+            if (snapGuideY != null) {
+                drawLine(
+                    color = StudioPink,
+                    start = Offset(resLeft, stageCenterY),
+                    end = Offset(resLeft + resWidth, stageCenterY),
+                    strokeWidth = 2f
+                )
+            }
+
+            // 7. Motion Trajectory Path
+            if (showMotionTrajectory && selectedLayer != null && selectedLayer.keyframes.size > 1 && !isPlaying) {
+                val path = ViewportPathEngine.tempPath1
+                path.reset()
+                var first = true
+
+                for (f in 0 until project.totalFrames step 1) {
+                    val tf = EasingFunctions.evaluateLayerAtFrame(selectedLayer, f.toFloat())
+                    val px = stageCenterX + tf.x * zoom
+                    val py = stageCenterY + tf.y * zoom
+                    if (first) {
+                        path.moveTo(px, py)
+                        first = false
+                    } else {
+                        path.lineTo(px, py)
+                    }
+                }
+
+                drawPath(
+                    path = path,
+                    color = KorvaVioletPrimary.copy(alpha = 0.75f),
+                    style = Stroke(width = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
+                )
+
+                selectedLayer.keyframes.forEach { kf ->
+                    val kfX = stageCenterX + kf.x * zoom
+                    val kfY = stageCenterY + kf.y * zoom
+                    drawCircle(color = StudioCyan, radius = 4f, center = Offset(kfX, kfY))
+                    drawCircle(color = Color.White, radius = 2f, center = Offset(kfX, kfY))
+                }
+
+                if (selectedTransform != null) {
+                    val curX = stageCenterX + selectedTransform.x * zoom
+                    val curY = stageCenterY + selectedTransform.y * zoom
+                    drawCircle(color = StudioPink, radius = 6f, center = Offset(curX, curY))
+                    drawCircle(color = Color.White, radius = 2.5f, center = Offset(curX, curY))
+                }
+            }
+
+            // 8. Ghosting Onion Skinning
+            if (onionSkinEnabled && !isPlaying) {
+                for (step in 1..pastOnionCount) {
+                    val pastF = currentFrame - step * 2f
+                    if (pastF >= 0) {
+                        val ghostAlpha = 0.28f / step
+                        drawProjectLayers(
+                            layers = project.layers,
+                            frame = pastF,
+                            stageCenterX = stageCenterX,
+                            stageCenterY = stageCenterY,
+                            zoom = zoom,
+                            tintOverride = StudioCyan.copy(alpha = ghostAlpha)
+                        )
+                    }
+                }
+                for (step in 1..futureOnionCount) {
+                    val futureF = currentFrame + step * 2f
+                    if (futureF < project.totalFrames) {
+                        val ghostAlpha = 0.28f / step
+                        drawProjectLayers(
+                            layers = project.layers,
+                            frame = futureF,
+                            stageCenterX = stageCenterX,
+                            stageCenterY = stageCenterY,
+                            zoom = zoom,
+                            tintOverride = StudioOrange.copy(alpha = ghostAlpha)
+                        )
+                    }
+                }
+            }
+
+            // 9. Core Frame Layer Rendering
+            drawProjectLayers(
+                layers = project.layers,
+                frame = currentFrame,
+                stageCenterX = stageCenterX,
+                stageCenterY = stageCenterY,
+                zoom = zoom,
+                tintOverride = null
+            )
+
+            // 10. Frame Outline
+            drawRect(
+                color = StudioBorderLight.copy(alpha = 0.7f),
+                topLeft = Offset(resLeft, resTop),
+                size = Size(resWidth, resHeight),
+                style = Stroke(width = 1.5f)
+            )
+
+            // 11. World-Matrix Bound Interactive Transform Gizmo
+            if (selectedLayer != null && selectedTransform != null && !isPlaying) {
+                val geo = computeViewportGeometry(
+                    layer = selectedLayer,
+                    transform = selectedTransform,
+                    stageCenterX = stageCenterX,
+                    stageCenterY = stageCenterY,
+                    zoom = zoom
+                )
+
+                withTransform({
+                    translate(geo.origin.x, geo.origin.y)
+                    rotate(geo.rotationDeg)
+                }) {
+                    // Exact 4-edge Bounding Box
+                    drawLine(KorvaVioletPrimary, geo.pTL, geo.pTR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                    drawLine(KorvaVioletPrimary, geo.pTR, geo.pBR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                    drawLine(KorvaVioletPrimary, geo.pBR, geo.pBL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                    drawLine(KorvaVioletPrimary, geo.pBL, geo.pTL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+
+                    // 4 Corner Scale Handles
+                    val handleRadius = 7f
+                    val handleColor = Color.White
+                    val handleStroke = if (activeTool == EditorTool.SCALE) StudioOrange else KorvaVioletPrimary
+
+                    listOf(geo.pTL, geo.pTR, geo.pBR, geo.pBL).forEach { cornerPt ->
+                        drawCircle(color = handleColor, radius = handleRadius, center = cornerPt)
+                        drawCircle(color = handleStroke, radius = handleRadius, center = cornerPt, style = Stroke(2.2f))
+                    }
+
+                    // 4 Edge Midpoint Handles
+                    listOf(geo.midTop, geo.midRight, geo.midBottom, geo.midLeft).forEach { midPt ->
+                        drawCircle(color = StudioOrange, radius = 4.5f, center = midPt)
+                        drawCircle(color = Color.White, radius = 1.8f, center = midPt)
+                    }
+
+                    // Rotation Stem & Knob
+                    drawLine(
+                        color = KorvaVioletPrimary,
+                        start = geo.midTop,
+                        end = geo.rotHandle,
+                        strokeWidth = 2f
+                    )
+                    drawCircle(color = Color.White, radius = 7.5f, center = geo.rotHandle)
+                    drawCircle(color = KorvaVioletPrimary, radius = 7.5f, center = geo.rotHandle, style = Stroke(2.5f))
+
+                    // Pivot Indicator at (0, 0)
+                    drawCircle(color = StudioCyan, radius = 5.5f, center = Offset.Zero)
+                    drawCircle(color = Color.White, radius = 2.2f, center = Offset.Zero)
+                    drawLine(color = StudioCyan, start = Offset(-8f, 0f), end = Offset(8f, 0f), strokeWidth = 1.2f)
+                    drawLine(color = StudioCyan, start = Offset(0f, -8f), end = Offset(0f, 8f), strokeWidth = 1.2f)
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TOP VIEWPORT HUD BAR
+        // -------------------------------------------------------------
+        Surface(
+            color = StudioPanelDark.copy(alpha = 0.92f),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .padding(8.dp)
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp)),
+            shadowElevation = 6.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Left: Frame readout & FPS
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = StudioSurfaceDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, KorvaVioletPrimary.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("F:", color = TextMuted, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "${currentFrame.toInt()} / ${project.totalFrames}",
+                                color = KorvaVioletLight,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "${project.fps} FPS",
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Center: Viewport Mode Overlays
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    ViewportToolIcon(
+                        icon = Icons.Default.GridOn,
+                        label = "Grid",
+                        isActive = gridVisible,
+                        onClick = { viewModel.toggleGrid() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.CenterFocusStrong,
+                        label = "Snap",
+                        isActive = snapToGrid,
+                        onClick = { viewModel.toggleSnapToGrid() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.Timeline,
+                        label = "Path",
+                        isActive = showMotionTrajectory,
+                        onClick = { viewModel.toggleMotionTrajectory() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.Layers,
+                        label = "Onion",
+                        isActive = onionSkinEnabled,
+                        onClick = { viewModel.toggleOnionSkin() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.AspectRatio,
+                        label = "Safe",
+                        isActive = showSafeZones,
+                        onClick = { viewModel.toggleSafeZones() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.Apps,
+                        label = "3rds",
+                        isActive = showRuleOfThirds,
+                        onClick = { viewModel.toggleRuleOfThirds() }
+                    )
+
+                    ViewportToolIcon(
+                        icon = Icons.Default.Palette,
+                        label = "Canvas BG",
+                        isActive = canvasBgMode != 0,
+                        onClick = { viewModel.cycleCanvasBg() }
+                    )
+                }
+
+                // Right: Zoom controls
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    IconButton(
+                        onClick = { viewModel.zoomOut() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = TextSecondary, modifier = Modifier.size(13.dp))
+                    }
+
+                    Text(
+                        text = "${(zoom * 100).toInt()}%",
+                        color = TextPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { viewModel.resetViewport() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+
+                    IconButton(
+                        onClick = { viewModel.zoomIn() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = TextSecondary, modifier = Modifier.size(13.dp))
+                    }
+
+                    IconButton(
+                        onClick = { viewModel.resetViewport() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.FitScreen, contentDescription = "Fit Canvas", tint = KorvaVioletLight, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // LIVE DRAG READOUT PILL
+        // -------------------------------------------------------------
+        AnimatedVisibility(
+            visible = isDragging && liveTooltipText.isNotEmpty(),
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        ) {
+            Surface(
+                color = StudioSurfaceVariant.copy(alpha = 0.95f),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, KorvaVioletPrimary.copy(alpha = 0.7f)),
+                shadowElevation = 8.dp
+            ) {
+                Text(
+                    text = liveTooltipText,
+                    color = KorvaVioletLight,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ViewportToolIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        color = if (isActive) KorvaVioletDark.copy(alpha = 0.5f) else Color.Transparent,
+        shape = RoundedCornerShape(6.dp),
+        border = if (isActive) androidx.compose.foundation.BorderStroke(0.5.dp, KorvaVioletPrimary) else null,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isActive) KorvaVioletLight else TextMuted,
+                modifier = Modifier.size(12.dp)
+            )
+            Text(
+                text = label,
+                color = if (isActive) TextPrimary else TextMuted,
+                fontSize = 9.sp,
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+/**
+ * High-Speed Layer Stack Renderer.
+ */
+private fun DrawScope.drawProjectLayers(
+    layers: List<AnimationLayer>,
+    frame: Float,
+    stageCenterX: Float,
+    stageCenterY: Float,
+    zoom: Float,
+    tintOverride: Color?
+) {
+    val sortedLayers = layers.filter { it.isVisible }.sortedBy { it.zIndex }
+
+    for (layer in sortedLayers) {
+        val transform = EasingFunctions.evaluateLayerAtFrame(layer, frame)
+        val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, zoom)
+
+        val layerW = layer.width * zoom
+        val layerH = layer.height * zoom
+        val layerLeft = geo.l0
+        val layerTop = geo.t0
+
+        withTransform({
+            translate(geo.origin.x, geo.origin.y)
+            rotate(geo.rotationDeg)
+            scale(transform.scaleX, transform.scaleY, Offset.Zero)
+        }) {
+            val drawAlpha = if (tintOverride != null) tintOverride.alpha else transform.opacity
+            val fillColor = tintOverride ?: Color(layer.shapeStyle.fillColor).copy(alpha = drawAlpha)
+
+            when (layer.shapeKind) {
+                ShapeKind.RECTANGLE -> {
+                    drawRect(
+                        color = fillColor,
+                        topLeft = Offset(layerLeft, layerTop),
+                        size = Size(layerW, layerH)
+                    )
+                }
+                ShapeKind.ROUNDED_RECT -> {
+                    val cr = (layer.shapeStyle.cornerRadius * zoom).coerceAtLeast(4f)
+                    drawRoundRect(
+                        color = fillColor,
+                        topLeft = Offset(layerLeft, layerTop),
+                        size = Size(layerW, layerH),
+                        cornerRadius = CornerRadius(cr, cr)
+                    )
+                }
+                ShapeKind.CIRCLE -> {
+                    drawOval(
+                        color = fillColor,
+                        topLeft = Offset(layerLeft, layerTop),
+                        size = Size(layerW, layerH)
+                    )
+                }
+                ShapeKind.STAR -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val cx = layerLeft + layerW / 2f
+                    val cy = layerTop + layerH / 2f
+                    val rOuter = min(layerW, layerH) / 2f
+                    val rInner = rOuter * 0.45f
+                    val points = 5
+                    for (i in 0 until points * 2) {
+                        val r = if (i % 2 == 0) rOuter else rInner
+                        val angle = (i * PI / points - PI / 2).toFloat()
+                        val px = cx + r * cos(angle)
+                        val py = cy + r * sin(angle)
+                        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                    }
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.TRIANGLE -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    path.moveTo(layerLeft + layerW / 2f, layerTop)
+                    path.lineTo(layerLeft + layerW, layerTop + layerH)
+                    path.lineTo(layerLeft, layerTop + layerH)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.DIAMOND -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val midX = layerLeft + layerW / 2f
+                    val midY = layerTop + layerH / 2f
+                    path.moveTo(midX, layerTop)
+                    path.lineTo(layerLeft + layerW, midY)
+                    path.lineTo(midX, layerTop + layerH)
+                    path.lineTo(layerLeft, midY)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.ARROW -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val midX = layerLeft + layerW / 2f
+                    val stemW = layerW * 0.25f
+                    path.moveTo(midX, layerTop)
+                    path.lineTo(layerLeft + layerW, layerTop + layerH * 0.45f)
+                    path.lineTo(midX + stemW, layerTop + layerH * 0.45f)
+                    path.lineTo(midX + stemW, layerTop + layerH)
+                    path.lineTo(midX - stemW, layerTop + layerH)
+                    path.lineTo(midX - stemW, layerTop + layerH * 0.45f)
+                    path.lineTo(layerLeft, layerTop + layerH * 0.45f)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.SWORD -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val midX = layerLeft + layerW / 2f
+                    val bladeW = layerW * 0.2f
+                    path.moveTo(midX, layerTop)
+                    path.lineTo(midX + bladeW, layerTop + layerH * 0.2f)
+                    path.lineTo(midX + bladeW, layerTop + layerH * 0.7f)
+                    path.lineTo(layerLeft + layerW * 0.85f, layerTop + layerH * 0.7f)
+                    path.lineTo(layerLeft + layerW * 0.85f, layerTop + layerH * 0.77f)
+                    path.lineTo(midX + bladeW * 0.6f, layerTop + layerH * 0.77f)
+                    path.lineTo(midX + bladeW * 0.6f, layerTop + layerH * 0.95f)
+                    path.lineTo(midX - bladeW * 0.6f, layerTop + layerH * 0.95f)
+                    path.lineTo(midX - bladeW * 0.6f, layerTop + layerH * 0.77f)
+                    path.lineTo(layerLeft + layerW * 0.15f, layerTop + layerH * 0.77f)
+                    path.lineTo(layerLeft + layerW * 0.15f, layerTop + layerH * 0.7f)
+                    path.lineTo(midX - bladeW, layerTop + layerH * 0.7f)
+                    path.lineTo(midX - bladeW, layerTop + layerH * 0.2f)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.SHIELD -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val midX = layerLeft + layerW / 2f
+                    path.moveTo(midX, layerTop + layerH)
+                    path.lineTo(layerLeft, layerTop + layerH * 0.35f)
+                    path.lineTo(layerLeft, layerTop)
+                    path.lineTo(layerLeft + layerW, layerTop)
+                    path.lineTo(layerLeft + layerW, layerTop + layerH * 0.35f)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.SLIME -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    val cx = layerLeft + layerW / 2f
+                    val cy = layerTop + layerH * 0.6f
+                    val rx = layerW * 0.48f
+                    val ry = layerH * 0.38f
+                    path.moveTo(cx - rx, cy)
+                    path.cubicTo(cx - rx, layerTop, cx, layerTop * 0.8f, cx, layerTop + layerH * 0.1f)
+                    path.cubicTo(cx, layerTop * 0.8f, cx + rx, layerTop, cx + rx, cy)
+                    path.cubicTo(cx + rx, layerTop + layerH, cx - rx, layerTop + layerH, cx - rx, cy)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+                ShapeKind.COIN -> {
+                    drawOval(
+                        color = fillColor,
+                        topLeft = Offset(layerLeft, layerTop),
+                        size = Size(layerW, layerH)
+                    )
+                    drawOval(
+                        color = StudioYellow,
+                        topLeft = Offset(layerLeft + layerW * 0.15f, layerTop + layerH * 0.15f),
+                        size = Size(layerW * 0.7f, layerH * 0.7f),
+                        style = Stroke(width = 2f * zoom)
+                    )
+                }
+                ShapeKind.SLASH_FX -> {
+                    val path = ViewportPathEngine.tempPath1
+                    path.reset()
+                    path.moveTo(layerLeft, layerTop + layerH)
+                    path.cubicTo(layerLeft + layerW * 0.3f, layerTop + layerH * 0.2f, layerLeft + layerW * 0.7f, layerTop, layerLeft + layerW, layerTop)
+                    path.cubicTo(layerLeft + layerW * 0.6f, layerTop + layerH * 0.4f, layerLeft + layerW * 0.2f, layerTop + layerH * 0.8f, layerLeft, layerTop + layerH)
+                    path.close()
+                    drawPath(path = path, color = fillColor)
+                }
+            }
+        }
+    }
+}

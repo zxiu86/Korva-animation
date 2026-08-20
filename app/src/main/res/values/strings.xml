@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Korva Animation</string>
+    <string name="title_timeline">Timeline</string>
+    <string name="title_layers">Layers</string>
+    <string name="title_inspector">Properties</string>
+    <string name="title_export">Export Animation</string>
+    <string name="title_import">Import Assets</string>
+</resources>

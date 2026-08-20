@@ -1,0 +1,6 @@
+{
+  "name": "Korva Animation",
+  "description": "Professional 2D Game Animation Studio with keyframing, multi-layer timeline, easing curves, sprite import/export, and .kor project support",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

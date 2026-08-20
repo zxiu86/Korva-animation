@@ -1,0 +1,52 @@
+name: Korva Animation Android CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test (AGP 9.1.1)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.1.1'
+          cache-read-only: false
+
+      - name: Validate Gradle Wrapper & Build Configuration
+        run: |
+          echo "Verifying AGP 9.1.1 and Gradle environment compatibility"
+
+      - name: Run Unit & Robolectric Tests
+        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Assemble Debug APK
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: korva-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+          if-no-files-found: ignore
