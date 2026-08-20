@@ -96,6 +96,9 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     private val _timelineZoom = MutableStateFlow(1.0f) // 0.5f to 3.0f
     val timelineZoom: StateFlow<Float> = _timelineZoom.asStateFlow()
 
+    private val _timelineFitToScreen = MutableStateFlow(true)
+    val timelineFitToScreen: StateFlow<Boolean> = _timelineFitToScreen.asStateFlow()
+
     private val _timelineSnapToKeyframes = MutableStateFlow(true)
     val timelineSnapToKeyframes: StateFlow<Boolean> = _timelineSnapToKeyframes.asStateFlow()
 
@@ -800,14 +803,26 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTimelineZoom(zoom: Float) {
         _timelineZoom.value = zoom.coerceIn(0.4f, 3.5f)
+        _timelineFitToScreen.value = false
     }
 
     fun zoomTimelineIn() {
+        _timelineFitToScreen.value = false
         setTimelineZoom(_timelineZoom.value * 1.25f)
     }
 
     fun zoomTimelineOut() {
+        _timelineFitToScreen.value = false
         setTimelineZoom(_timelineZoom.value * 0.8f)
+    }
+
+    fun toggleTimelineFitToScreen() {
+        _timelineFitToScreen.value = !_timelineFitToScreen.value
+        postStatus(if (_timelineFitToScreen.value) "Timeline: Fit to View" else "Timeline: Custom Zoom")
+    }
+
+    fun setTimelineFitToScreen(fit: Boolean) {
+        _timelineFitToScreen.value = fit
     }
 
     fun toggleTimelineSnap() {
