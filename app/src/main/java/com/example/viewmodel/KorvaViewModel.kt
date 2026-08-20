@@ -89,8 +89,36 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     private val _isBottomTimelineCollapsed = MutableStateFlow(false)
     val isBottomTimelineCollapsed: StateFlow<Boolean> = _isBottomTimelineCollapsed.asStateFlow()
 
-    private val _timelineHeightDp = MutableStateFlow(140f)
+    private val _timelineHeightDp = MutableStateFlow(165f)
     val timelineHeightDp: StateFlow<Float> = _timelineHeightDp.asStateFlow()
+
+    // Next-Gen Timeline Advanced State
+    private val _timelineZoom = MutableStateFlow(1.0f) // 0.5f to 3.0f
+    val timelineZoom: StateFlow<Float> = _timelineZoom.asStateFlow()
+
+    private val _timelineSnapToKeyframes = MutableStateFlow(true)
+    val timelineSnapToKeyframes: StateFlow<Boolean> = _timelineSnapToKeyframes.asStateFlow()
+
+    private val _selectedKeyframe = MutableStateFlow<Pair<String, Int>?>(null) // LayerId, Frame
+    val selectedKeyframe: StateFlow<Pair<String, Int>?> = _selectedKeyframe.asStateFlow()
+
+    private val _timelineViewMode = MutableStateFlow(0) // 0: DopeSheet Tracks, 1: Motion Graph & Curve Curves
+    val timelineViewMode: StateFlow<Int> = _timelineViewMode.asStateFlow()
+
+    private val _timelineShowSubTracks = MutableStateFlow(false) // Position, Scale, Rotation channels
+    val timelineShowSubTracks: StateFlow<Boolean> = _timelineShowSubTracks.asStateFlow()
+
+    private val _workAreaEnabled = MutableStateFlow(false)
+    val workAreaEnabled: StateFlow<Boolean> = _workAreaEnabled.asStateFlow()
+
+    private val _workAreaStart = MutableStateFlow(0)
+    val workAreaStart: StateFlow<Int> = _workAreaStart.asStateFlow()
+
+    private val _workAreaEnd = MutableStateFlow(24)
+    val workAreaEnd: StateFlow<Int> = _workAreaEnd.asStateFlow()
+
+    private val _timeDisplayFormat = MutableStateFlow(0) // 0: Frames (F 12), 1: Timecode (00:00.50s), 2: Percentage (50%)
+    val timeDisplayFormat: StateFlow<Int> = _timeDisplayFormat.asStateFlow()
 
     private val _inspectorTab = MutableStateFlow(0) // 0: Properties, 1: Layers
     val inspectorTab: StateFlow<Int> = _inspectorTab.asStateFlow()
@@ -688,6 +716,128 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
             // Add keyframe with this easing
             addOrUpdateKeyframeOnCurrentFrame(easing = easing)
         }
+    }
+
+    // Advanced Next-Gen Timeline Actions
+    fun setSelectedKeyframe(layerId: String?, frame: Int?) {
+        if (layerId != null && frame != null) {
+            _selectedKeyframe.value = Pair(layerId, frame)
+            _selectedLayerId.value = layerId
+            scrubToFrame(frame.toFloat())
+        } else {
+            _selectedKeyframe.value = null
+        }
+    }
+
+    fun jumpToPrevKeyframe() {
+        val currentF = _currentFrame.value.toInt()
+        val allKfFrames = _project.value.layers.flatMap { it.keyframes }.map { it.frame }.distinct().sorted()
+        val prevKf = allKfFrames.lastOrNull { it < currentF }
+        if (prevKf != null) {
+            scrubToFrame(prevKf.toFloat())
+            postStatus("Jumped to Keyframe F$prevKf")
+        } else if (currentF > 0) {
+            jumpToStart()
+        }
+    }
+
+    fun jumpToNextKeyframe() {
+        val currentF = _currentFrame.value.toInt()
+        val allKfFrames = _project.value.layers.flatMap { it.keyframes }.map { it.frame }.distinct().sorted()
+        val nextKf = allKfFrames.firstOrNull { it > currentF }
+        if (nextKf != null) {
+            scrubToFrame(nextKf.toFloat())
+            postStatus("Jumped to Keyframe F$nextKf")
+        } else if (currentF < _project.value.totalFrames - 1) {
+            jumpToEnd()
+        }
+    }
+
+    fun moveKeyframe(layerId: String, oldFrame: Int, newFrame: Int) {
+        val validNewFrame = newFrame.coerceIn(0, _project.value.totalFrames - 1)
+        if (oldFrame == validNewFrame) return
+
+        pushUndoState()
+        val updatedLayers = _project.value.layers.map { layer ->
+            if (layer.id == layerId) {
+                val targetKf = layer.keyframes.find { it.frame == oldFrame }
+                if (targetKf != null) {
+                    val filtered = layer.keyframes.filter { it.frame != oldFrame && it.frame != validNewFrame }
+                    val movedKf = targetKf.copy(frame = validNewFrame)
+                    layer.copy(keyframes = (filtered + movedKf).sortedBy { it.frame })
+                } else layer
+            } else layer
+        }
+        _project.update { it.copy(layers = updatedLayers) }
+        _selectedKeyframe.value = Pair(layerId, validNewFrame)
+        scrubToFrame(validNewFrame.toFloat())
+        postStatus("Moved keyframe from F$oldFrame to F$validNewFrame")
+    }
+
+    fun nudgeKeyframe(layerId: String, frame: Int, delta: Int) {
+        moveKeyframe(layerId, frame, frame + delta)
+    }
+
+    fun duplicateKeyframe(layerId: String, fromFrame: Int, toFrame: Int) {
+        val validToFrame = toFrame.coerceIn(0, _project.value.totalFrames - 1)
+        val layer = _project.value.layers.find { it.id == layerId } ?: return
+        val sourceKf = layer.keyframes.find { it.frame == fromFrame } ?: return
+
+        pushUndoState()
+        val newKf = sourceKf.copy(frame = validToFrame)
+        val updatedKfs = layer.keyframes.filter { it.frame != validToFrame }.toMutableList().apply {
+            add(newKf)
+            sortBy { it.frame }
+        }
+        val updatedLayers = _project.value.layers.map {
+            if (it.id == layerId) it.copy(keyframes = updatedKfs) else it
+        }
+        _project.update { it.copy(layers = updatedLayers) }
+        _selectedKeyframe.value = Pair(layerId, validToFrame)
+        scrubToFrame(validToFrame.toFloat())
+        postStatus("Duplicated keyframe to F$validToFrame")
+    }
+
+    fun setTimelineZoom(zoom: Float) {
+        _timelineZoom.value = zoom.coerceIn(0.4f, 3.5f)
+    }
+
+    fun zoomTimelineIn() {
+        setTimelineZoom(_timelineZoom.value * 1.25f)
+    }
+
+    fun zoomTimelineOut() {
+        setTimelineZoom(_timelineZoom.value * 0.8f)
+    }
+
+    fun toggleTimelineSnap() {
+        _timelineSnapToKeyframes.value = !_timelineSnapToKeyframes.value
+        postStatus("Timeline Snap: ${if (_timelineSnapToKeyframes.value) "ON" else "OFF"}")
+    }
+
+    fun toggleTimelineViewMode() {
+        _timelineViewMode.value = if (_timelineViewMode.value == 0) 1 else 0
+        postStatus("Timeline Mode: ${if (_timelineViewMode.value == 0) "DopeSheet Tracks" else "Curves & Motion Graph"}")
+    }
+
+    fun toggleSubTracks() {
+        _timelineShowSubTracks.value = !_timelineShowSubTracks.value
+    }
+
+    fun cycleTimeDisplayFormat() {
+        _timeDisplayFormat.value = (_timeDisplayFormat.value + 1) % 3
+    }
+
+    fun toggleWorkArea() {
+        _workAreaEnabled.value = !_workAreaEnabled.value
+        postStatus("Work Area Loop: ${if (_workAreaEnabled.value) "Active" else "Disabled"}")
+    }
+
+    fun setWorkAreaRange(start: Int, end: Int) {
+        val s = start.coerceIn(0, _project.value.totalFrames - 1)
+        val e = end.coerceIn(s + 1, _project.value.totalFrames)
+        _workAreaStart.value = s
+        _workAreaEnd.value = e
     }
 
     // Direct Canvas Transform Drag
