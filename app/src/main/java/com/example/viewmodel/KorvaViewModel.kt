@@ -83,13 +83,13 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLeftToolbarCollapsed = MutableStateFlow(false)
     val isLeftToolbarCollapsed: StateFlow<Boolean> = _isLeftToolbarCollapsed.asStateFlow()
 
-    private val _isRightInspectorCollapsed = MutableStateFlow(false)
+    private val _isRightInspectorCollapsed = MutableStateFlow(true)
     val isRightInspectorCollapsed: StateFlow<Boolean> = _isRightInspectorCollapsed.asStateFlow()
 
     private val _isBottomTimelineCollapsed = MutableStateFlow(false)
     val isBottomTimelineCollapsed: StateFlow<Boolean> = _isBottomTimelineCollapsed.asStateFlow()
 
-    private val _timelineHeightDp = MutableStateFlow(165f)
+    private val _timelineHeightDp = MutableStateFlow(175f)
     val timelineHeightDp: StateFlow<Float> = _timelineHeightDp.asStateFlow()
 
     // Next-Gen Timeline Advanced State

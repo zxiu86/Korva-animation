@@ -858,11 +858,11 @@ private fun DopeSheetTimelineView(
 
     val rulerHeightDp = 24.dp
     val trackHeightDp = if (showSubTracks) 52.dp else 24.dp
-    val leftHeaderWidthDp = 118.dp
+    val leftHeaderWidthDp = 92.dp
 
     // Frame Spacing in DP:
-    val startPaddingDp = 24.dp // Breathing room so Frame 0 is never hidden under the left sidebar
-    val endPaddingDp = 48.dp   // Room after the last frame (F60, F120, etc.)
+    val startPaddingDp = 16.dp // Breathing room so Frame 0 is never hidden under the left sidebar
+    val endPaddingDp = 32.dp   // Room after the last frame (F60, F120, etc.)
     val frameSpacingDp = (18f * timelineZoom).coerceIn(6f, 60f).dp
 
     val totalTrackWidthDp = startPaddingDp + (frameSpacingDp * (project.totalFrames - 1).coerceAtLeast(1)) + endPaddingDp
@@ -1100,7 +1100,7 @@ private fun DopeSheetCanvas(
     Canvas(
         modifier = Modifier
             .width(canvasWidthDp)
-            .height(totalCanvasHeightDp)
+            .fillMaxHeight()
             .pointerInput(totalFrames, frameSpacingPx, startPaddingPx, project.layers) {
                 detectTapGestures { tapOffset ->
                     val tapX = tapOffset.x
