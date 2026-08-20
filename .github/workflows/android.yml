@@ -33,9 +33,33 @@ jobs:
           gradle-version: '9.3.1'
           cache-read-only: false
 
+      - name: Cache Gradle & Android Build Artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android/build-cache
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Make Gradle Wrapper Executable
         run: |
           if [ -f "./gradlew" ]; then chmod +x ./gradlew; fi
+
+      - name: Ensure Debug Keystore Exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f "debug.keystore" ] && [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          fi
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            cp debug.keystore "$HOME/.android/debug.keystore" 2>/dev/null || true
+          fi
 
       - name: Run Unit & Robolectric Tests
         run: |
