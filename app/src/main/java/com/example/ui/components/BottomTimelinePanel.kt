@@ -21,8 +21,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -42,6 +40,17 @@ import com.example.viewmodel.KorvaViewModel
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+// Blender-inspired signature colors
+private val BlenderDarkBg = Color(0xFF1B1C1E)
+private val BlenderPanelBg = Color(0xFF232428)
+private val BlenderSurface = Color(0xFF2D2E34)
+private val BlenderSurfaceHighlight = Color(0xFF3B3C44)
+private val BlenderBorder = Color(0xFF383942)
+private val BlenderPlayheadBlue = Color(0xFF478CFF)
+private val BlenderKeyframeGold = Color(0xFFFFB84D)
+private val BlenderKeyframeSelected = Color(0xFFFFFFFF)
+private val BlenderPlayheadHead = Color(0xFF5CA0FF)
+
 @Composable
 fun BottomTimelinePanel(
     viewModel: KorvaViewModel,
@@ -55,15 +64,7 @@ fun BottomTimelinePanel(
     val timelineHeightDp by viewModel.timelineHeightDp.collectAsState()
     val timelineZoom by viewModel.timelineZoom.collectAsState()
     val timelineFitToScreen by viewModel.timelineFitToScreen.collectAsState()
-    val timelineSnap by viewModel.timelineSnapToKeyframes.collectAsState()
     val selectedKeyframe by viewModel.selectedKeyframe.collectAsState()
-    val timelineViewMode by viewModel.timelineViewMode.collectAsState()
-    val showSubTracks by viewModel.timelineShowSubTracks.collectAsState()
-    val workAreaEnabled by viewModel.workAreaEnabled.collectAsState()
-    val workAreaStart by viewModel.workAreaStart.collectAsState()
-    val workAreaEnd by viewModel.workAreaEnd.collectAsState()
-    val timeFormat by viewModel.timeDisplayFormat.collectAsState()
-    val onionSkinEnabled by viewModel.onionSkinEnabled.collectAsState()
 
     val selectedLayer = project.layers.find { it.id == selectedLayerId }
     val currentKfExists = selectedLayer?.keyframes?.any { it.frame == currentFrame.toInt() } == true
@@ -71,32 +72,28 @@ fun BottomTimelinePanel(
     val density = LocalDensity.current
 
     val panelHeight by animateDpAsState(
-        targetValue = if (isCollapsed) 38.dp else timelineHeightDp.dp,
+        targetValue = if (isCollapsed) 36.dp else timelineHeightDp.coerceAtLeast(140f).dp,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "TimelinePanelHeight"
     )
 
     Surface(
-        color = StudioPanelDark,
-        tonalElevation = 8.dp,
+        color = BlenderDarkBg,
+        tonalElevation = 6.dp,
         modifier = modifier
             .fillMaxWidth()
             .height(panelHeight)
-            .border(width = 1.dp, color = StudioBorder)
+            .border(width = 1.dp, color = BlenderBorder)
             .testTag("bottom_timeline_panel")
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // 1. DYNAMIC GRAB HANDLE & RESIZE BAR
+            // 1. Sleek Drag Handle to adjust height
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(StudioSurfaceVariant, StudioSurfaceDark)
-                        )
-                    )
+                    .height(5.dp)
+                    .background(BlenderSurface)
                     .pointerInput(Unit) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
@@ -107,714 +104,393 @@ fun BottomTimelinePanel(
                     .clickable { viewModel.toggleTimelineHeightPreset() },
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(36.dp)
-                            .height(2.dp)
-                            .clip(CircleShape)
-                            .background(if (isCollapsed) KorvaVioletLight else StudioBorderLight)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(2.dp)
-                            .clip(CircleShape)
-                            .background(if (isCollapsed) KorvaVioletPrimary else StudioBorder)
-                    )
-                }
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(2.dp)
+                        .clip(CircleShape)
+                        .background(if (isCollapsed) BlenderPlayheadBlue else BlenderBorder)
+                )
             }
 
-            // 2. MASTER RESPONSIVE TIMELINE CONTROL TOOLBAR (Pinned top header)
-            TimelineControlHeader(
+            // 2. Blender-Style Transport Toolbar
+            BlenderTransportToolbar(
                 project = project,
                 currentFrame = currentFrame,
                 isPlaying = isPlaying,
                 isCollapsed = isCollapsed,
-                timelineZoom = timelineZoom,
-                timelineFitToScreen = timelineFitToScreen,
-                timelineSnap = timelineSnap,
-                timelineViewMode = timelineViewMode,
-                showSubTracks = showSubTracks,
-                workAreaEnabled = workAreaEnabled,
-                timeFormat = timeFormat,
-                onionSkinEnabled = onionSkinEnabled,
                 currentKfExists = currentKfExists,
+                timelineFitToScreen = timelineFitToScreen,
                 onToggleCollapse = { viewModel.toggleBottomTimeline() },
                 onTogglePlay = { viewModel.togglePlay() },
                 onJumpStart = { viewModel.jumpToStart() },
                 onJumpEnd = { viewModel.jumpToEnd() },
                 onStepBackward = { viewModel.stepBackward() },
                 onStepForward = { viewModel.stepForward() },
-                onJumpPrevKeyframe = { viewModel.jumpToPrevKeyframe() },
-                onJumpNextKeyframe = { viewModel.jumpToNextKeyframe() },
-                onAddOrUpdateKeyframe = { viewModel.addOrUpdateKeyframeOnCurrentFrame() },
+                onJumpPrevKf = { viewModel.jumpToPrevKeyframe() },
+                onJumpNextKf = { viewModel.jumpToNextKeyframe() },
+                onToggleKeyframe = { viewModel.addOrUpdateKeyframeOnCurrentFrame() },
                 onDeleteKeyframe = { viewModel.deleteKeyframeOnCurrentFrame() },
+                onToggleFit = { viewModel.toggleTimelineFitToScreen() },
                 onZoomIn = { viewModel.zoomTimelineIn() },
                 onZoomOut = { viewModel.zoomTimelineOut() },
-                onToggleFitToScreen = { viewModel.toggleTimelineFitToScreen() },
-                onToggleSnap = { viewModel.toggleTimelineSnap() },
-                onToggleViewMode = { viewModel.toggleTimelineViewMode() },
-                onToggleSubTracks = { viewModel.toggleSubTracks() },
-                onToggleWorkArea = { viewModel.toggleWorkArea() },
-                onCycleTimeFormat = { viewModel.cycleTimeDisplayFormat() },
-                onToggleOnionSkin = { viewModel.toggleOnionSkin() },
-                onCycleLoopMode = {
-                    val nextMode = when (project.loopMode) {
+                onCycleLoop = {
+                    val next = when (project.loopMode) {
                         LoopMode.REPEAT -> LoopMode.PING_PONG
                         LoopMode.PING_PONG -> LoopMode.ONCE
                         LoopMode.ONCE -> LoopMode.REPEAT
                     }
-                    viewModel.setLoopMode(nextMode)
+                    viewModel.setLoopMode(next)
                 },
-                onSetFps = { fps -> viewModel.setFps(fps) },
-                onSetTotalFrames = { total -> viewModel.setTotalFrames(total) }
+                onSetFps = { viewModel.setFps(it) },
+                onSetTotalFrames = { viewModel.setTotalFrames(it) }
             )
 
-            // 3. KEYFRAME QUICK ACTION HUD (When on keyframe or selected)
-            if (!isCollapsed && (currentKfExists || selectedKeyframe != null)) {
-                val activeKfLayerId = selectedKeyframe?.first ?: selectedLayerId
-                val activeKfFrame = selectedKeyframe?.second ?: currentFrame.toInt()
-                val targetLayer = project.layers.find { it.id == activeKfLayerId }
-                val targetKf = targetLayer?.keyframes?.find { it.frame == activeKfFrame }
-
-                if (targetLayer != null && targetKf != null) {
-                    KeyframeQuickActionHUD(
-                        layerName = targetLayer.name,
-                        keyframe = targetKf,
-                        onNudgeLeft = { viewModel.nudgeKeyframe(targetLayer.id, targetKf.frame, -1) },
-                        onNudgeRight = { viewModel.nudgeKeyframe(targetLayer.id, targetKf.frame, 1) },
-                        onDuplicate = {
-                            val nextF = (targetKf.frame + 5).coerceAtMost(project.totalFrames - 1)
-                            viewModel.duplicateKeyframe(targetLayer.id, targetKf.frame, nextF)
-                        },
-                        onChangeEasing = { easing -> viewModel.setKeyframeEasing(easing) },
-                        onDelete = { viewModel.deleteKeyframeOnCurrentFrame() }
-                    )
-                }
-            }
-
-            // 4. MAIN CONTENT AREA (DopeSheet Multi-Tracks OR Motion Graph)
+            // 3. Blender-Style Timeline Dopesheet (Ruler + Multi-Track Canvas)
             if (!isCollapsed) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    when (timelineViewMode) {
-                        0 -> DopeSheetTimelineView(
-                            project = project,
-                            currentFrame = currentFrame,
-                            selectedLayerId = selectedLayerId,
-                            selectedKeyframe = selectedKeyframe,
-                            timelineZoom = timelineZoom,
-                            timelineFitToScreen = timelineFitToScreen,
-                            timelineSnap = timelineSnap,
-                            showSubTracks = showSubTracks,
-                            workAreaEnabled = workAreaEnabled,
-                            workAreaStart = workAreaStart,
-                            workAreaEnd = workAreaEnd,
-                            onScrub = { f -> viewModel.scrubToFrame(f) },
-                            onSelectLayer = { id -> viewModel.selectLayer(id) },
-                            onSelectKeyframe = { lId, kfFrame -> viewModel.setSelectedKeyframe(lId, kfFrame) },
-                            onMoveKeyframe = { lId, oldF, newF -> viewModel.moveKeyframe(lId, oldF, newF) },
-                            onToggleVisibility = { id -> viewModel.toggleLayerVisibility(id) },
-                            onToggleLock = { id -> viewModel.toggleLayerLock(id) }
-                        )
-
-                        1 -> MotionGraphTimelineView(
-                            project = project,
-                            currentFrame = currentFrame,
-                            selectedLayerId = selectedLayerId,
-                            timelineZoom = timelineZoom,
-                            timelineFitToScreen = timelineFitToScreen,
-                            onScrub = { f -> viewModel.scrubToFrame(f) }
-                        )
-                    }
-                }
+                BlenderTimelineTracks(
+                    project = project,
+                    currentFrame = currentFrame,
+                    selectedLayerId = selectedLayerId,
+                    selectedKeyframe = selectedKeyframe,
+                    timelineZoom = timelineZoom,
+                    timelineFitToScreen = timelineFitToScreen,
+                    onScrub = { viewModel.scrubToFrame(it) },
+                    onSelectLayer = { viewModel.selectLayer(it) },
+                    onSelectKeyframe = { lId, kf -> viewModel.setSelectedKeyframe(lId, kf) },
+                    onMoveKeyframe = { lId, oldF, newF -> viewModel.moveKeyframe(lId, oldF, newF) },
+                    onToggleVisibility = { viewModel.toggleLayerVisibility(it) },
+                    onToggleLock = { viewModel.toggleLayerLock(it) }
+                )
             }
         }
     }
 }
 
 // =============================================================================
-// COMPONENT 1: MASTER RESPONSIVE TIMELINE CONTROL TOOLBAR
+// 1. BLENDER TRANSPORT TOOLBAR
 // =============================================================================
 @Composable
-private fun TimelineControlHeader(
+private fun BlenderTransportToolbar(
     project: KorProject,
     currentFrame: Float,
     isPlaying: Boolean,
     isCollapsed: Boolean,
-    timelineZoom: Float,
-    timelineFitToScreen: Boolean,
-    timelineSnap: Boolean,
-    timelineViewMode: Int,
-    showSubTracks: Boolean,
-    workAreaEnabled: Boolean,
-    timeFormat: Int,
-    onionSkinEnabled: Boolean,
     currentKfExists: Boolean,
+    timelineFitToScreen: Boolean,
     onToggleCollapse: () -> Unit,
     onTogglePlay: () -> Unit,
     onJumpStart: () -> Unit,
     onJumpEnd: () -> Unit,
     onStepBackward: () -> Unit,
     onStepForward: () -> Unit,
-    onJumpPrevKeyframe: () -> Unit,
-    onJumpNextKeyframe: () -> Unit,
-    onAddOrUpdateKeyframe: () -> Unit,
+    onJumpPrevKf: () -> Unit,
+    onJumpNextKf: () -> Unit,
+    onToggleKeyframe: () -> Unit,
     onDeleteKeyframe: () -> Unit,
+    onToggleFit: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
-    onToggleFitToScreen: () -> Unit,
-    onToggleSnap: () -> Unit,
-    onToggleViewMode: () -> Unit,
-    onToggleSubTracks: () -> Unit,
-    onToggleWorkArea: () -> Unit,
-    onCycleTimeFormat: () -> Unit,
-    onToggleOnionSkin: () -> Unit,
-    onCycleLoopMode: () -> Unit,
+    onCycleLoop: () -> Unit,
     onSetFps: (Int) -> Unit,
     onSetTotalFrames: (Int) -> Unit
 ) {
-    val headerScrollState = rememberScrollState()
-
-    val infiniteTransition = rememberInfiniteTransition(label = "PlayGlow")
-    val playGlowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.7f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PlayGlowPulse"
-    )
+    val scrollState = rememberScrollState()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(32.dp)
-            .background(StudioSurfaceDark)
-            .horizontalScroll(headerScrollState)
-            .padding(horizontal = 6.dp),
+            .height(31.dp)
+            .background(BlenderPanelBg)
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // --- LEFT GROUP: COLLAPSE TOGGLE, VIEW MODE, TIME BADGE ---
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // Minimize / Expand button
+        IconButton(
+            onClick = onToggleCollapse,
+            modifier = Modifier.size(24.dp)
         ) {
-            // Minimize / Restore Toggle Button
-            IconButton(
-                onClick = onToggleCollapse,
-                modifier = Modifier.size(24.dp)
+            Icon(
+                imageVector = if (isCollapsed) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = "Toggle Timeline",
+                tint = BlenderPlayheadBlue,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        // Current Frame Display Box (Blender Style input pill)
+        Surface(
+            color = BlenderSurface,
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(1.dp, BlenderPlayheadBlue.copy(alpha = 0.8f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                Icon(
-                    imageVector = if (isCollapsed) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isCollapsed) "Expand Timeline" else "Collapse Timeline",
-                    tint = KorvaVioletLight,
-                    modifier = Modifier.size(18.dp)
+                Text(
+                    text = "${currentFrame.toInt()}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
                 )
-            }
-
-            if (!isCollapsed) {
-                // View Mode Switcher (DopeSheet Tracks vs Curves)
-                Surface(
-                    color = if (timelineViewMode == 0) KorvaVioletDark.copy(alpha = 0.5f) else StudioSurfaceVariant,
-                    shape = RoundedCornerShape(4.dp),
-                    border = BorderStroke(0.5.dp, if (timelineViewMode == 0) KorvaVioletLight else StudioBorder),
-                    modifier = Modifier
-                        .clickable { onToggleViewMode() }
-                        .testTag("timeline_view_mode_toggle")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (timelineViewMode == 0) Icons.Default.ViewTimeline else Icons.Default.ShowChart,
-                            contentDescription = null,
-                            tint = if (timelineViewMode == 0) KorvaVioletLight else StudioCyan,
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Text(
-                            text = if (timelineViewMode == 0) "TRACKS" else "CURVES",
-                            color = TextPrimary,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Time / Frame Counter Badge
-                Surface(
-                    color = StudioPanelDark,
-                    shape = RoundedCornerShape(4.dp),
-                    border = BorderStroke(0.5.dp, StudioBorder),
-                    modifier = Modifier.clickable { onCycleTimeFormat() }
-                ) {
-                    val timeString = when (timeFormat) {
-                        1 -> {
-                            val seconds = currentFrame / project.fps
-                            String.format("%.2fs", seconds)
-                        }
-                        2 -> {
-                            val pct = ((currentFrame / (project.totalFrames - 1).coerceAtLeast(1)) * 100).toInt()
-                            "$pct%"
-                        }
-                        else -> "F ${currentFrame.toInt()} / ${project.totalFrames}"
-                    }
-
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(if (isPlaying) StudioGreen else KorvaVioletLight)
-                        )
-                        Text(
-                            text = timeString,
-                            color = TextPrimary,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
             }
         }
 
-        VerticalDivider(color = StudioBorder, modifier = Modifier.height(14.dp))
+        // Frame Range (Start / End)
+        Surface(
+            color = BlenderSurface,
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(0.5.dp, BlenderBorder)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text("0", color = Color.Gray, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace)
+                Text("-", color = BlenderBorder, fontSize = 9.sp)
+                Text("${project.totalFrames}", color = BlenderKeyframeGold, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            }
+        }
 
-        // --- CENTER GROUP: MAIN TRANSPORT PLAYBACK CONTROLS ---
+        VerticalDivider(color = BlenderBorder, modifier = Modifier.height(14.dp))
+
+        // Transport Controls (Blender Layout: |<  <  Play/Pause  >  >|)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            // Jump to Start (|<)
+            // Jump Start (|<)
             IconButton(onClick = onJumpStart, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.FirstPage, contentDescription = "Jump Start", tint = TextSecondary, modifier = Modifier.size(15.dp))
+                Icon(Icons.Default.FirstPage, contentDescription = "Start", tint = Color.LightGray, modifier = Modifier.size(15.dp))
             }
 
-            // Jump to Prev Keyframe (⏮)
-            IconButton(onClick = onJumpPrevKeyframe, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "Prev Keyframe", tint = KorvaVioletLight, modifier = Modifier.size(16.dp))
+            // Prev Keyframe (⏮)
+            IconButton(onClick = onJumpPrevKf, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Prev KF", tint = BlenderKeyframeGold, modifier = Modifier.size(15.dp))
             }
 
-            // Step 1 Frame Backward (◀)
+            // Step Back (<)
             IconButton(onClick = onStepBackward, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.ArrowLeft, contentDescription = "Prev Frame", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ArrowLeft, contentDescription = "Step Back", tint = Color.White, modifier = Modifier.size(18.dp))
             }
 
-            // MASTER PLAY / PAUSE BUTTON (High Contrast Glowing Pill)
+            // Main Play / Pause Button
             Surface(
-                color = if (isPlaying) StudioRed.copy(alpha = 0.95f) else KorvaVioletPrimary.copy(alpha = playGlowAlpha),
-                shape = RoundedCornerShape(6.dp),
-                border = BorderStroke(1.dp, if (isPlaying) StudioRed else KorvaVioletLight),
-                shadowElevation = if (isPlaying) 4.dp else 2.dp,
+                color = if (isPlaying) Color(0xFFE05252) else BlenderPlayheadBlue,
+                shape = RoundedCornerShape(4.dp),
+                border = BorderStroke(1.dp, if (isPlaying) Color(0xFFFF7878) else Color(0xFF70A8FF)),
                 modifier = Modifier
                     .clickable { onTogglePlay() }
                     .testTag("timeline_play_pause_button")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
                         tint = Color.White,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = if (isPlaying) "PAUSE" else "PLAY",
                         color = Color.White,
-                        fontSize = 9.5.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 0.8.sp
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
 
-            // Step 1 Frame Forward (▶)
+            // Step Forward (>)
             IconButton(onClick = onStepForward, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.ArrowRight, contentDescription = "Next Frame", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ArrowRight, contentDescription = "Step Forward", tint = Color.White, modifier = Modifier.size(18.dp))
             }
 
-            // Jump to Next Keyframe (⏭)
-            IconButton(onClick = onJumpNextKeyframe, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.SkipNext, contentDescription = "Next Keyframe", tint = KorvaVioletLight, modifier = Modifier.size(16.dp))
+            // Next Keyframe (⏭)
+            IconButton(onClick = onJumpNextKf, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next KF", tint = BlenderKeyframeGold, modifier = Modifier.size(15.dp))
             }
 
-            // Jump to End (>|)
+            // Jump End (>|)
             IconButton(onClick = onJumpEnd, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.LastPage, contentDescription = "Jump End", tint = TextSecondary, modifier = Modifier.size(15.dp))
-            }
-
-            // Loop Mode Switcher
-            val loopIcon = when (project.loopMode) {
-                LoopMode.REPEAT -> Icons.Default.Repeat
-                LoopMode.PING_PONG -> Icons.Default.SwapHoriz
-                LoopMode.ONCE -> Icons.Default.East
-            }
-            Surface(
-                color = StudioSurfaceVariant,
-                shape = RoundedCornerShape(4.dp),
-                border = BorderStroke(0.5.dp, StudioBorder),
-                modifier = Modifier
-                    .clickable { onCycleLoopMode() }
-                    .padding(start = 2.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Icon(loopIcon, contentDescription = "Loop Mode", tint = KorvaVioletLight, modifier = Modifier.size(12.dp))
-                    Text(
-                        text = when (project.loopMode) {
-                            LoopMode.REPEAT -> "LOOP"
-                            LoopMode.PING_PONG -> "P-PONG"
-                            LoopMode.ONCE -> "ONCE"
-                        },
-                        color = TextSecondary,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Icon(Icons.Default.LastPage, contentDescription = "End", tint = Color.LightGray, modifier = Modifier.size(15.dp))
             }
         }
 
-        VerticalDivider(color = StudioBorder, modifier = Modifier.height(14.dp))
+        VerticalDivider(color = BlenderBorder, modifier = Modifier.height(14.dp))
 
-        // --- RIGHT GROUP: KEYFRAME BUTTONS, FIT, ZOOM, SNAPPING, FPS, TOTAL FRAMES ---
+        // Keyframing Controls (Blender Diamond Icon)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            // Master Keyframe Add / Update Button
-            Button(
-                onClick = onAddOrUpdateKeyframe,
-                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (currentKfExists) KorvaVioletDark else KorvaVioletPrimary,
-                    contentColor = Color.White
+            Surface(
+                color = if (currentKfExists) BlenderKeyframeGold.copy(alpha = 0.25f) else BlenderSurface,
+                shape = RoundedCornerShape(3.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (currentKfExists) BlenderKeyframeGold else BlenderBorder
                 ),
-                shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
-                    .height(23.dp)
+                    .clickable { onToggleKeyframe() }
                     .testTag("add_keyframe_button")
             ) {
-                Icon(
-                    imageVector = if (currentKfExists) Icons.Default.CheckCircle else Icons.Default.AddCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(11.dp)
-                )
-                Spacer(modifier = Modifier.width(3.dp))
-                Text(
-                    text = if (currentKfExists) "UPDATE KF" else "+ KEYFRAME",
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Delete Keyframe if present on active frame
-            if (currentKfExists) {
-                IconButton(
-                    onClick = onDeleteKeyframe,
-                    modifier = Modifier.size(22.dp)
-                ) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete KF", tint = StudioRed, modifier = Modifier.size(13.dp))
-                }
-            }
-
-            // Fit To Screen Toggle Button
-            Surface(
-                color = if (timelineFitToScreen) KorvaVioletDark.copy(alpha = 0.6f) else StudioSurfaceVariant,
-                shape = RoundedCornerShape(3.dp),
-                border = BorderStroke(0.5.dp, if (timelineFitToScreen) KorvaVioletLight else StudioBorder),
-                modifier = Modifier.clickable { onToggleFitToScreen() }
-            ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.FitScreen,
-                        contentDescription = "Fit Timeline to Screen",
-                        tint = if (timelineFitToScreen) KorvaVioletLight else TextMuted,
+                        imageVector = Icons.Default.Diamond,
+                        contentDescription = "Keyframe",
+                        tint = if (currentKfExists) BlenderKeyframeGold else Color.Gray,
                         modifier = Modifier.size(11.dp)
                     )
                     Text(
-                        text = "FIT",
-                        color = if (timelineFitToScreen) KorvaVioletLight else TextMuted,
-                        fontSize = 8.sp,
+                        text = if (currentKfExists) "KEYFRAME" else "+ KEYFRAME",
+                        color = if (currentKfExists) BlenderKeyframeGold else Color.White,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            // Zoom In / Out
-            IconButton(onClick = onZoomOut, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = TextMuted, modifier = Modifier.size(13.dp))
-            }
-            IconButton(onClick = onZoomIn, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = TextMuted, modifier = Modifier.size(13.dp))
-            }
-
-            // Keyframe Magnet Snapping Toggle
-            IconButton(
-                onClick = onToggleSnap,
-                modifier = Modifier.size(22.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Grain,
-                    contentDescription = "Snap to Keyframes",
-                    tint = if (timelineSnap) StudioYellow else TextMuted,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            // Onion Skin Quick Toggle
-            IconButton(
-                onClick = onToggleOnionSkin,
-                modifier = Modifier.size(22.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Layers,
-                    contentDescription = "Onion Skin",
-                    tint = if (onionSkinEnabled) StudioCyan else TextMuted,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            // Subtracks / Channel Splitting Toggle
-            IconButton(
-                onClick = onToggleSubTracks,
-                modifier = Modifier.size(22.dp)
-            ) {
-                Icon(
-                    imageVector = if (showSubTracks) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
-                    contentDescription = "Toggle Channels",
-                    tint = if (showSubTracks) KorvaVioletLight else TextMuted,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            // FPS Selector
-            var showFpsDropdown by remember { mutableStateOf(false) }
-            Box {
-                Surface(
-                    color = StudioSurfaceVariant,
-                    shape = RoundedCornerShape(3.dp),
-                    border = BorderStroke(0.5.dp, StudioBorder),
-                    modifier = Modifier.clickable { showFpsDropdown = true }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(1.dp)
-                    ) {
-                        Text("${project.fps} FPS", color = TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(10.dp))
-                    }
-                }
-
-                DropdownMenu(
-                    expanded = showFpsDropdown,
-                    onDismissRequest = { showFpsDropdown = false },
-                    modifier = Modifier.background(StudioSurfaceDark)
-                ) {
-                    listOf(12, 24, 30, 60).forEach { fpsVal ->
-                        DropdownMenuItem(
-                            text = { Text("$fpsVal FPS", color = TextPrimary, fontSize = 10.sp) },
-                            onClick = {
-                                onSetFps(fpsVal)
-                                showFpsDropdown = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Total Frames Selector (Supports 12, 24, 30, 48, 60, 90, 120, 180, 240)
-            var showFramesDropdown by remember { mutableStateOf(false) }
-            Box {
-                Surface(
-                    color = StudioSurfaceVariant,
-                    shape = RoundedCornerShape(3.dp),
-                    border = BorderStroke(0.5.dp, StudioBorder),
-                    modifier = Modifier.clickable { showFramesDropdown = true }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(1.dp)
-                    ) {
-                        Text("${project.totalFrames}F", color = KorvaVioletLight, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(11.dp))
-                    }
-                }
-
-                DropdownMenu(
-                    expanded = showFramesDropdown,
-                    onDismissRequest = { showFramesDropdown = false },
-                    modifier = Modifier.background(StudioSurfaceDark)
-                ) {
-                    listOf(12, 16, 24, 30, 48, 60, 90, 120, 180, 240).forEach { count ->
-                        DropdownMenuItem(
-                            text = { Text("$count frames", color = TextPrimary, fontSize = 10.sp) },
-                            onClick = {
-                                onSetTotalFrames(count)
-                                showFramesDropdown = false
-                            }
-                        )
-                    }
+            if (currentKfExists) {
+                IconButton(onClick = onDeleteKeyframe, modifier = Modifier.size(22.dp)) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete KF", tint = Color(0xFFFF6B6B), modifier = Modifier.size(13.dp))
                 }
             }
         }
-    }
-}
 
-// =============================================================================
-// COMPONENT 2: KEYFRAME QUICK ACTION HUD & EASING CAROUSEL
-// =============================================================================
-@Composable
-private fun KeyframeQuickActionHUD(
-    layerName: String,
-    keyframe: Keyframe,
-    onNudgeLeft: () -> Unit,
-    onNudgeRight: () -> Unit,
-    onDuplicate: () -> Unit,
-    onChangeEasing: (EasingType) -> Unit,
-    onDelete: () -> Unit
-) {
-    val scrollState = rememberScrollState()
+        VerticalDivider(color = BlenderBorder, modifier = Modifier.height(14.dp))
 
-    Surface(
-        color = StudioSurfaceVariant.copy(alpha = 0.98f),
-        border = BorderStroke(0.8.dp, KorvaVioletLight.copy(alpha = 0.35f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(26.dp)
-    ) {
+        // Viewport Fit & Zoom Controls
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(scrollState)
-                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            // Left: Active Keyframe Info Badge
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            // FIT Button
+            Surface(
+                color = if (timelineFitToScreen) BlenderPlayheadBlue.copy(alpha = 0.25f) else BlenderSurface,
+                shape = RoundedCornerShape(3.dp),
+                border = BorderStroke(0.5.dp, if (timelineFitToScreen) BlenderPlayheadBlue else BlenderBorder),
+                modifier = Modifier.clickable { onToggleFit() }
             ) {
-                Icon(
-                    imageVector = Icons.Default.Diamond,
-                    contentDescription = null,
-                    tint = StudioYellow,
-                    modifier = Modifier.size(11.dp)
-                )
                 Text(
-                    text = "KF @ F${keyframe.frame}",
-                    color = StudioYellow,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "• $layerName",
-                    color = TextSecondary,
+                    text = "FIT",
+                    color = if (timelineFitToScreen) BlenderPlayheadBlue else Color.Gray,
                     fontSize = 8.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.5.dp)
                 )
-
-                // Quick Nudge Frame Buttons
-                IconButton(onClick = onNudgeLeft, modifier = Modifier.size(18.dp)) {
-                    Text("-1F", color = KorvaVioletLight, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                }
-                IconButton(onClick = onNudgeRight, modifier = Modifier.size(18.dp)) {
-                    Text("+1F", color = KorvaVioletLight, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                }
             }
 
-            VerticalDivider(color = StudioBorder, modifier = Modifier.height(12.dp))
+            // Zoom In / Out
+            IconButton(onClick = onZoomOut, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = Color.Gray, modifier = Modifier.size(12.dp))
+            }
+            IconButton(onClick = onZoomIn, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = Color.Gray, modifier = Modifier.size(12.dp))
+            }
+        }
 
-            // Center: Easing Curve Selectors Quick Strip
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(text = "EASING:", color = TextMuted, fontSize = 7.5.sp, fontWeight = FontWeight.Bold)
+        VerticalDivider(color = BlenderBorder, modifier = Modifier.height(14.dp))
 
-                val quickEasings = listOf(
-                    EasingType.LINEAR to "LIN",
-                    EasingType.EASE_IN_QUAD to "IN",
-                    EasingType.EASE_OUT_QUAD to "OUT",
-                    EasingType.EASE_IN_OUT_CUBIC to "SMOOTH",
-                    EasingType.BOUNCE_OUT to "BOUNCE",
-                    EasingType.ELASTIC_OUT to "ELASTIC"
+        // Loop Mode & FPS & Frames Dropdowns
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            // Loop Mode
+            IconButton(onClick = onCycleLoop, modifier = Modifier.size(22.dp)) {
+                Icon(
+                    imageVector = when (project.loopMode) {
+                        LoopMode.REPEAT -> Icons.Default.Repeat
+                        LoopMode.PING_PONG -> Icons.Default.SwapHoriz
+                        LoopMode.ONCE -> Icons.Default.East
+                    },
+                    contentDescription = "Loop Mode",
+                    tint = Color.LightGray,
+                    modifier = Modifier.size(13.dp)
                 )
-
-                quickEasings.forEach { (easing, label) ->
-                    val isSelected = keyframe.easing == easing
-                    Surface(
-                        color = if (isSelected) KorvaVioletPrimary else StudioPanelDark,
-                        shape = RoundedCornerShape(3.dp),
-                        border = BorderStroke(
-                            0.5.dp,
-                            if (isSelected) KorvaVioletLight else StudioBorder
-                        ),
-                        modifier = Modifier.clickable { onChangeEasing(easing) }
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) Color.White else TextMuted,
-                            fontSize = 7.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.padding(horizontal = 3.5.dp, vertical = 1.5.dp)
-                        )
-                    }
-                }
             }
 
-            VerticalDivider(color = StudioBorder, modifier = Modifier.height(12.dp))
-
-            // Right: Duplicate & Delete KF
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            // FPS Dropdown
+            var showFps by remember { mutableStateOf(false) }
+            Box {
                 Surface(
-                    color = KorvaVioletDark.copy(alpha = 0.4f),
+                    color = BlenderSurface,
                     shape = RoundedCornerShape(3.dp),
-                    border = BorderStroke(0.5.dp, KorvaVioletPrimary.copy(alpha = 0.5f)),
-                    modifier = Modifier.clickable { onDuplicate() }
+                    border = BorderStroke(0.5.dp, BlenderBorder),
+                    modifier = Modifier.clickable { showFps = true }
                 ) {
                     Text(
-                        text = "+ CLONE KF",
-                        color = KorvaVioletLight,
-                        fontSize = 8.sp,
+                        text = "${project.fps} FPS",
+                        color = Color.LightGray,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.5.dp)
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                     )
                 }
 
-                IconButton(onClick = onDelete, modifier = Modifier.size(18.dp)) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete KF", tint = StudioRed, modifier = Modifier.size(12.dp))
+                DropdownMenu(
+                    expanded = showFps,
+                    onDismissRequest = { showFps = false },
+                    modifier = Modifier.background(BlenderDarkBg)
+                ) {
+                    listOf(12, 24, 30, 60).forEach { fps ->
+                        DropdownMenuItem(
+                            text = { Text("$fps FPS", color = Color.White, fontSize = 10.sp) },
+                            onClick = {
+                                onSetFps(fps)
+                                showFps = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Total Frames Dropdown
+            var showTotalFrames by remember { mutableStateOf(false) }
+            Box {
+                Surface(
+                    color = BlenderSurface,
+                    shape = RoundedCornerShape(3.dp),
+                    border = BorderStroke(0.5.dp, BlenderBorder),
+                    modifier = Modifier.clickable { showTotalFrames = true }
+                ) {
+                    Text(
+                        text = "${project.totalFrames} F",
+                        color = BlenderKeyframeGold,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showTotalFrames,
+                    onDismissRequest = { showTotalFrames = false },
+                    modifier = Modifier.background(BlenderDarkBg)
+                ) {
+                    listOf(12, 24, 30, 48, 60, 90, 120, 180, 240).forEach { count ->
+                        DropdownMenuItem(
+                            text = { Text("$count Frames", color = Color.White, fontSize = 10.sp) },
+                            onClick = {
+                                onSetTotalFrames(count)
+                                showTotalFrames = false
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -822,21 +498,16 @@ private fun KeyframeQuickActionHUD(
 }
 
 // =============================================================================
-// COMPONENT 3: DOPESHEET MULTI-TRACK VIEW
+// 2. BLENDER TIMELINE TRACKS (LEFT LAYER NAMES + RIGHT SCROLLABLE CANVAS)
 // =============================================================================
 @Composable
-private fun DopeSheetTimelineView(
+private fun BlenderTimelineTracks(
     project: KorProject,
     currentFrame: Float,
     selectedLayerId: String?,
     selectedKeyframe: Pair<String, Int>?,
     timelineZoom: Float,
     timelineFitToScreen: Boolean,
-    timelineSnap: Boolean,
-    showSubTracks: Boolean,
-    workAreaEnabled: Boolean,
-    workAreaStart: Int,
-    workAreaEnd: Int,
     onScrub: (Float) -> Unit,
     onSelectLayer: (String) -> Unit,
     onSelectKeyframe: (String, Int) -> Unit,
@@ -847,168 +518,134 @@ private fun DopeSheetTimelineView(
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
 
-    val rulerHeightDp = 24.dp
-    val trackHeightDp = if (showSubTracks) 52.dp else 24.dp
-    val leftHeaderWidthDp = 96.dp
+    val rulerHeightDp = 22.dp
+    val trackHeightDp = 24.dp
+    val leftHeaderWidthDp = 90.dp
 
-    // Safe padding: 20dp start margin guarantees Frame 0 is NEVER clipped under the header
-    val startPaddingDp = 20.dp
-    val endPaddingDp = 28.dp
+    val startPaddingDp = 16.dp
+    val endPaddingDp = 20.dp
 
     Row(modifier = Modifier.fillMaxSize()) {
-        // --- 3A. LEFT FIXED COLUMN: TRACK HEADERS ---
+        // LEFT COLUMN: Layer Names List
         Column(
             modifier = Modifier
                 .width(leftHeaderWidthDp)
                 .fillMaxHeight()
-                .background(StudioSurfaceDark)
-                .shadow(4.dp)
-                .border(width = 0.5.dp, color = StudioBorder)
+                .background(BlenderPanelBg)
+                .border(width = 0.5.dp, color = BlenderBorder)
         ) {
-            // Track Header Cell
+            // Header for Summary
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(rulerHeightDp)
-                    .background(StudioPanelDark)
+                    .background(BlenderDarkBg)
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(Icons.Default.Layers, contentDescription = null, tint = KorvaVioletLight, modifier = Modifier.size(11.dp))
-                    Text(
-                        text = "LAYERS (${project.layers.size})",
-                        color = TextSecondary,
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                }
+                Text(
+                    text = "Summary",
+                    color = Color.Gray,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
-            HorizontalDivider(color = StudioBorder, thickness = 0.8.dp)
+            HorizontalDivider(color = BlenderBorder, thickness = 0.8.dp)
 
-            // Track Rows on the left
+            // Layer Row Items
             Column(modifier = Modifier.weight(1f)) {
                 project.layers.forEach { layer ->
                     val isSelected = layer.id == selectedLayerId
                     val shapeColor = getShapeColor(layer.shapeKind)
 
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(trackHeightDp)
                             .background(
-                                if (isSelected) KorvaVioletDark.copy(alpha = 0.35f) else StudioSurfaceDark
+                                if (isSelected) BlenderSurfaceHighlight else BlenderPanelBg
                             )
                             .clickable { onSelectLayer(layer.id) }
-                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                        verticalArrangement = Arrangement.Center
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(shapeColor)
-                                        .border(0.5.dp, Color.White.copy(alpha = 0.4f), CircleShape)
-                                )
-
-                                Text(
-                                    text = layer.name,
-                                    color = if (isSelected) KorvaVioletLight else TextPrimary,
-                                    fontSize = 9.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            // Visibility & Lock Toggles
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = "Visibility",
-                                    tint = if (layer.isVisible) TextMuted else StudioRed,
-                                    modifier = Modifier
-                                        .size(11.dp)
-                                        .clickable { onToggleVisibility(layer.id) }
-                                )
-                                Icon(
-                                    imageVector = if (layer.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                    contentDescription = "Lock",
-                                    tint = if (layer.isLocked) StudioYellow else TextMuted.copy(alpha = 0.5f),
-                                    modifier = Modifier
-                                        .size(11.dp)
-                                        .clickable { onToggleLock(layer.id) }
-                                )
-                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(shapeColor)
+                            )
+                            Text(
+                                text = layer.name,
+                                color = if (isSelected) Color.White else Color.LightGray,
+                                fontSize = 8.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
-                        // Sub-tracks label if expanded
-                        if (showSubTracks) {
-                            Row(
+                        // Visibility & Lock Icons
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = null,
+                                tint = if (layer.isVisible) Color.Gray else Color(0xFFFF5252),
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 3.dp, start = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text("POS", color = StudioCyan.copy(alpha = 0.8f), fontSize = 6.5.sp, fontWeight = FontWeight.Bold)
-                                Text("ROT", color = StudioOrange.copy(alpha = 0.8f), fontSize = 6.5.sp, fontWeight = FontWeight.Bold)
-                                Text("SCL", color = StudioGreen.copy(alpha = 0.8f), fontSize = 6.5.sp, fontWeight = FontWeight.Bold)
-                                Text("OPAC", color = KorvaVioletLight.copy(alpha = 0.8f), fontSize = 6.5.sp, fontWeight = FontWeight.Bold)
-                            }
+                                    .size(10.dp)
+                                    .clickable { onToggleVisibility(layer.id) }
+                            )
+                            Icon(
+                                imageVector = if (layer.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = null,
+                                tint = if (layer.isLocked) BlenderKeyframeGold else Color.Transparent,
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clickable { onToggleLock(layer.id) }
+                            )
                         }
                     }
 
-                    HorizontalDivider(color = StudioBorder.copy(alpha = 0.4f), thickness = 0.5.dp)
+                    HorizontalDivider(color = BlenderBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
                 }
             }
         }
 
-        // --- 3B. RIGHT SCROLLABLE / FIT CANVAS ---
+        // RIGHT COLUMN: Ruler + Timeline Tracks Canvas
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .horizontalScroll(scrollState)
-                .background(StudioPanelDark)
+                .background(BlenderDarkBg)
         ) {
             val totalFrames = project.totalFrames
             val availableWidthDp = maxWidth
 
-            // Adaptive Frame Spacing Calculation:
             val frameSpacingDp: Dp
             val canvasWidthDp: Dp
 
             if (timelineFitToScreen) {
-                // In Fit Mode: perfectly divide the available width so frames 0..totalFrames fit exactly
-                val usableWidthDp = (availableWidthDp - startPaddingDp - endPaddingDp).coerceAtLeast(100.dp)
-                frameSpacingDp = (usableWidthDp / (totalFrames - 1).coerceAtLeast(1)).coerceIn(3.dp, 80.dp)
+                val usableWidthDp = (availableWidthDp - startPaddingDp - endPaddingDp).coerceAtLeast(60.dp)
+                frameSpacingDp = (usableWidthDp / (totalFrames - 1).coerceAtLeast(1)).coerceIn(3.dp, 60.dp)
                 canvasWidthDp = availableWidthDp
             } else {
-                // In Zoom Mode: fixed spacing multiplied by zoom
-                frameSpacingDp = (20f * timelineZoom).coerceIn(6f, 80f).dp
+                frameSpacingDp = (18f * timelineZoom).coerceIn(6f, 60f).dp
                 val totalTrackWidthDp = startPaddingDp + (frameSpacingDp * (totalFrames - 1).coerceAtLeast(1)) + endPaddingDp
                 canvasWidthDp = maxOf(totalTrackWidthDp, availableWidthDp)
             }
 
-            // Auto-scroll playhead into view when playing or scrubbing in zoom mode
+            // Auto scroll playhead when zooming or playing
             LaunchedEffect(currentFrame, timelineFitToScreen) {
                 if (!timelineFitToScreen) {
                     val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
@@ -1023,7 +660,7 @@ private fun DopeSheetTimelineView(
                 }
             }
 
-            DopeSheetCanvas(
+            BlenderCanvas(
                 project = project,
                 currentFrame = currentFrame,
                 selectedLayerId = selectedLayerId,
@@ -1033,10 +670,6 @@ private fun DopeSheetTimelineView(
                 frameSpacingDp = frameSpacingDp,
                 trackHeightDp = trackHeightDp,
                 rulerHeightDp = rulerHeightDp,
-                timelineSnap = timelineSnap,
-                workAreaEnabled = workAreaEnabled,
-                workAreaStart = workAreaStart,
-                workAreaEnd = workAreaEnd,
                 onScrub = onScrub,
                 onSelectLayer = onSelectLayer,
                 onSelectKeyframe = onSelectKeyframe,
@@ -1047,10 +680,10 @@ private fun DopeSheetTimelineView(
 }
 
 // =============================================================================
-// COMPONENT 4: DOPESHEET CANVAS RENDERING WITH GUARANTEED COORDINATE PRECISION
+// 3. UNIFIED BLENDER CANVAS (CLEAN RULER + TRACKS + DIAMOND KEYFRAMES + PLAYHEAD)
 // =============================================================================
 @Composable
-private fun DopeSheetCanvas(
+private fun BlenderCanvas(
     project: KorProject,
     currentFrame: Float,
     selectedLayerId: String?,
@@ -1060,10 +693,6 @@ private fun DopeSheetCanvas(
     frameSpacingDp: Dp,
     trackHeightDp: Dp,
     rulerHeightDp: Dp,
-    timelineSnap: Boolean,
-    workAreaEnabled: Boolean,
-    workAreaStart: Int,
-    workAreaEnd: Int,
     onScrub: (Float) -> Unit,
     onSelectLayer: (String) -> Unit,
     onSelectKeyframe: (String, Int) -> Unit,
@@ -1077,78 +706,64 @@ private fun DopeSheetCanvas(
     val startPaddingPx = with(density) { startPaddingDp.toPx() }
     val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
 
-    // Dragging keyframe state
-    var draggingKeyframe by remember { mutableStateOf<Triple<String, Int, Float>?>(null) } // layerId, originalFrame, currentDraggingX
+    var draggingKf by remember { mutableStateOf<Triple<String, Int, Float>?>(null) } // layerId, origFrame, currentDragX
 
-    // Helper coordinate conversion functions
     fun frameToX(f: Float): Float = startPaddingPx + f * frameSpacingPx
-    fun xToFrame(x: Float): Float = ((x - startPaddingPx) / frameSpacingPx).coerceIn(0f, (totalFrames - 1).toFloat())
+    fun xToFrame(x: Float): Float {
+        val rawF = (x - startPaddingPx) / frameSpacingPx
+        return rawF.coerceIn(0f, (totalFrames - 1).toFloat())
+    }
 
-    val textPaint = remember {
+    // Pre-calculate step interval for ruler numbers
+    val step = when {
+        frameSpacingPx > 35f -> 1
+        frameSpacingPx > 18f -> 5
+        frameSpacingPx > 8f -> 10
+        else -> 20
+    }
+
+    val textPaint = remember(density) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#94A3B8")
-            textSize = 20f
+            color = android.graphics.Color.argb(160, 200, 200, 200)
+            textSize = with(density) { 8.5.sp.toPx() }
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
-
-    val majorTextPaint = remember {
-        android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#C084FC")
-            textSize = 22f
-            isAntiAlias = true
-            isFakeBoldText = true
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
-    }
-
-    val sharedDiamondPath = remember { Path() }
-    val sharedPlayheadPath = remember { Path() }
-    val kfStroke = remember { Stroke(width = 1.5f) }
-    val kfSelectGlowStroke = remember { Stroke(width = 2.8f) }
 
     Canvas(
         modifier = Modifier
             .width(canvasWidthDp)
             .fillMaxHeight()
+            // Scrubbing & Keyframe Tap / Drag gestures
             .pointerInput(totalFrames, frameSpacingPx, startPaddingPx, project.layers) {
                 detectTapGestures { tapOffset ->
                     val tapX = tapOffset.x
                     val tapY = tapOffset.y
 
-                    // Check if tapped directly on a keyframe diamond
-                    var tappedKf: Pair<String, Int>? = null
-                    val trackIndex = ((tapY - rulerHeightPx) / trackHeightPx).toInt()
-
-                    if (trackIndex in project.layers.indices) {
-                        val layer = project.layers[trackIndex]
-                        for (kf in layer.keyframes) {
-                            val kfX = frameToX(kf.frame.toFloat())
-                            val kfY = rulerHeightPx + trackIndex * trackHeightPx + trackHeightPx / 2f
-                            if (abs(tapX - kfX) <= 16f && abs(tapY - kfY) <= 16f) {
-                                tappedKf = Pair(layer.id, kf.frame)
-                                break
-                            }
-                        }
-                    }
-
-                    if (tappedKf != null) {
-                        onSelectKeyframe(tappedKf.first, tappedKf.second)
+                    if (tapY <= rulerHeightPx) {
+                        // Tapped on Ruler: Scrub playhead directly
+                        onScrub(xToFrame(tapX).roundToInt().toFloat())
                     } else {
-                        // Regular scrubbing
-                        var frame = xToFrame(tapX)
-                        if (timelineSnap) {
-                            val roundFrame = frame.roundToInt().toFloat()
-                            if (abs(frame - roundFrame) < 0.35f) {
-                                frame = roundFrame
-                            }
-                        }
-                        onScrub(frame)
-
-                        // Select track if tapped in track area
+                        // Tapped on Tracks: Check if tapped a keyframe
+                        val trackIndex = ((tapY - rulerHeightPx) / trackHeightPx).toInt()
                         if (trackIndex in project.layers.indices) {
-                            onSelectLayer(project.layers[trackIndex].id)
+                            val layer = project.layers[trackIndex]
+                            onSelectLayer(layer.id)
+
+                            val clickedKf = layer.keyframes.find { kf ->
+                                val kfX = frameToX(kf.frame.toFloat())
+                                abs(tapX - kfX) <= (frameSpacingPx / 2f).coerceAtLeast(10f)
+                            }
+
+                            if (clickedKf != null) {
+                                onSelectKeyframe(layer.id, clickedKf.frame)
+                                onScrub(clickedKf.frame.toFloat())
+                            } else {
+                                onScrub(xToFrame(tapX).roundToInt().toFloat())
+                            }
+                        } else {
+                            onScrub(xToFrame(tapX).roundToInt().toFloat())
                         }
                     }
                 }
@@ -1156,501 +771,248 @@ private fun DopeSheetCanvas(
             .pointerInput(totalFrames, frameSpacingPx, startPaddingPx, project.layers) {
                 detectDragGestures(
                     onDragStart = { startOffset ->
-                        val trackIndex = ((startOffset.y - rulerHeightPx) / trackHeightPx).toInt()
-                        if (trackIndex in project.layers.indices) {
-                            val layer = project.layers[trackIndex]
-                            for (kf in layer.keyframes) {
-                                val kfX = frameToX(kf.frame.toFloat())
-                                val kfY = rulerHeightPx + trackIndex * trackHeightPx + trackHeightPx / 2f
-                                if (abs(startOffset.x - kfX) <= 18f && abs(startOffset.y - kfY) <= 18f) {
-                                    draggingKeyframe = Triple(layer.id, kf.frame, startOffset.x)
-                                    onSelectKeyframe(layer.id, kf.frame)
+                        val startX = startOffset.x
+                        val startY = startOffset.y
+
+                        if (startY > rulerHeightPx) {
+                            val trackIndex = ((startY - rulerHeightPx) / trackHeightPx).toInt()
+                            if (trackIndex in project.layers.indices) {
+                                val layer = project.layers[trackIndex]
+                                val hitKf = layer.keyframes.find { kf ->
+                                    val kfX = frameToX(kf.frame.toFloat())
+                                    abs(startX - kfX) <= (frameSpacingPx / 2f).coerceAtLeast(10f)
+                                }
+                                if (hitKf != null) {
+                                    draggingKf = Triple(layer.id, hitKf.frame, startX)
+                                    onSelectKeyframe(layer.id, hitKf.frame)
                                     return@detectDragGestures
                                 }
                             }
                         }
+                        // Default to scrubbing playhead
+                        onScrub(xToFrame(startX))
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val currentX = change.position.x
+                        val activeKf = draggingKf
+                        if (activeKf != null) {
+                            draggingKf = activeKf.copy(third = currentX)
+                            val draggedFrame = xToFrame(currentX).roundToInt()
+                            onScrub(draggedFrame.toFloat())
+                        } else {
+                            onScrub(xToFrame(currentX))
+                        }
                     },
                     onDragEnd = {
-                        val drag = draggingKeyframe
-                        if (drag != null) {
-                            val newFrame = xToFrame(drag.third).roundToInt().coerceIn(0, totalFrames - 1)
-                            onMoveKeyframe(drag.first, drag.second, newFrame)
-                            draggingKeyframe = null
+                        val activeKf = draggingKf
+                        if (activeKf != null) {
+                            val newFrame = xToFrame(activeKf.third).roundToInt()
+                            if (newFrame != activeKf.second) {
+                                onMoveKeyframe(activeKf.first, activeKf.second, newFrame)
+                            }
+                            draggingKf = null
                         }
                     },
                     onDragCancel = {
-                        draggingKeyframe = null
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        val drag = draggingKeyframe
-                        if (drag != null) {
-                            // Dragging keyframe
-                            val minX = frameToX(0f)
-                            val maxX = frameToX((totalFrames - 1).toFloat())
-                            val updatedX = (drag.third + dragAmount.x).coerceIn(minX, maxX)
-                            draggingKeyframe = Triple(drag.first, drag.second, updatedX)
-                            val liveFrame = xToFrame(updatedX).roundToInt().toFloat()
-                            onScrub(liveFrame)
-                        } else {
-                            // Scrubbing playhead
-                            var frame = xToFrame(change.position.x)
-                            if (timelineSnap) {
-                                val roundFrame = frame.roundToInt().toFloat()
-                                if (abs(frame - roundFrame) < 0.35f) {
-                                    frame = roundFrame
-                                }
-                            }
-                            onScrub(frame)
-                        }
+                        draggingKf = null
                     }
                 )
             }
     ) {
-        // -------------------------------------------------------------
-        // 1. RULER BACKGROUND & SEAMLESS CANVAS FILL
-        // -------------------------------------------------------------
+        val width = size.width
+        val height = size.height
+
+        // 1. Background Grid & Tracks alternating stripes
+        drawRect(color = BlenderDarkBg, size = size)
+
+        project.layers.forEachIndexed { index, layer ->
+            val trackTop = rulerHeightPx + index * trackHeightPx
+            val isLayerSelected = layer.id == selectedLayerId
+
+            // Track row background
+            val trackColor = if (isLayerSelected) {
+                BlenderSurfaceHighlight.copy(alpha = 0.45f)
+            } else if (index % 2 == 0) {
+                BlenderPanelBg.copy(alpha = 0.35f)
+            } else {
+                BlenderDarkBg
+            }
+
+            drawRect(
+                color = trackColor,
+                topLeft = Offset(0f, trackTop),
+                size = Size(width, trackHeightPx)
+            )
+
+            // Track dividing horizontal line
+            drawLine(
+                color = BlenderBorder.copy(alpha = 0.3f),
+                start = Offset(0f, trackTop + trackHeightPx),
+                end = Offset(width, trackTop + trackHeightPx),
+                strokeWidth = 1f
+            )
+        }
+
+        // 2. Vertical Frame Grid Lines (Subtle Blender tick lines)
+        for (f in 0 until totalFrames) {
+            val lineX = frameToX(f.toFloat())
+            val isMajor = f % 5 == 0
+
+            val gridColor = if (isMajor) {
+                BlenderBorder.copy(alpha = 0.35f)
+            } else {
+                BlenderBorder.copy(alpha = 0.12f)
+            }
+
+            // Line down entire track
+            drawLine(
+                color = gridColor,
+                start = Offset(lineX, rulerHeightPx),
+                end = Offset(lineX, height),
+                strokeWidth = if (isMajor) 1f else 0.5f
+            )
+        }
+
+        // 3. Draw Keyframes on Tracks (Crisp Blender Gold Diamonds ◆)
+        project.layers.forEachIndexed { index, layer ->
+            val trackCenterY = rulerHeightPx + index * trackHeightPx + trackHeightPx / 2f
+            val isLayerSelected = layer.id == selectedLayerId
+
+            // Draw span connection line between keyframes
+            val sortedKfs = layer.keyframes.sortedBy { it.frame }
+            if (sortedKfs.size >= 2) {
+                val firstX = frameToX(sortedKfs.first().frame.toFloat())
+                val lastX = frameToX(sortedKfs.last().frame.toFloat())
+                drawLine(
+                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.5f else 0.25f),
+                    start = Offset(firstX, trackCenterY),
+                    end = Offset(lastX, trackCenterY),
+                    strokeWidth = 2f
+                )
+            }
+
+            // Draw Diamonds
+            sortedKfs.forEach { kf ->
+                val isBeingDragged = draggingKf?.first == layer.id && draggingKf?.second == kf.frame
+                val kfX = if (isBeingDragged) draggingKf!!.third else frameToX(kf.frame.toFloat())
+                val isKfSelected = selectedKeyframe?.first == layer.id && selectedKeyframe?.second == kf.frame
+
+                val diamondRadius = if (isKfSelected) 5.5f else 4f
+                val diamondPath = Path().apply {
+                    moveTo(kfX, trackCenterY - diamondRadius)
+                    lineTo(kfX + diamondRadius, trackCenterY)
+                    lineTo(kfX, trackCenterY + diamondRadius)
+                    lineTo(kfX - diamondRadius, trackCenterY)
+                    close()
+                }
+
+                // Fill Diamond
+                drawPath(
+                    path = diamondPath,
+                    color = if (isKfSelected) BlenderKeyframeSelected else BlenderKeyframeGold
+                )
+
+                // Diamond Border
+                drawPath(
+                    path = diamondPath,
+                    color = if (isKfSelected) BlenderPlayheadBlue else Color(0xFF6B4500),
+                    style = Stroke(width = 1.2f)
+                )
+            }
+        }
+
+        // 4. Ruler Header Area (Blender Timeline Ruler)
         drawRect(
-            color = StudioSurfaceDark,
+            color = BlenderPanelBg,
             topLeft = Offset(0f, 0f),
-            size = Size(size.width, rulerHeightPx)
+            size = Size(width, rulerHeightPx)
         )
 
-        // Work Area Highlight (if enabled)
-        if (workAreaEnabled) {
-            val waStartX = frameToX(workAreaStart.toFloat())
-            val waEndX = frameToX(workAreaEnd.toFloat())
-            drawRect(
-                color = StudioOrange.copy(alpha = 0.12f),
-                topLeft = Offset(waStartX, 0f),
-                size = Size(waEndX - waStartX, size.height)
-            )
-            drawLine(
-                color = StudioOrange,
-                start = Offset(waStartX, 0f),
-                end = Offset(waStartX, size.height),
-                strokeWidth = 2f
-            )
-            drawLine(
-                color = StudioOrange,
-                start = Offset(waEndX, 0f),
-                end = Offset(waEndX, size.height),
-                strokeWidth = 2f
-            )
-        }
+        drawLine(
+            color = BlenderBorder,
+            start = Offset(0f, rulerHeightPx),
+            end = Offset(width, rulerHeightPx),
+            strokeWidth = 1.5f
+        )
 
-        // -------------------------------------------------------------
-        // 2. RULER TICKS & NUMBER LABELS & BACKGROUND GRID
-        // -------------------------------------------------------------
-        val labelStep = when {
-            totalFrames >= 180 -> if (frameSpacingPx > 18f) 10 else 20
-            totalFrames >= 90 -> if (frameSpacingPx > 22f) 5 else 10
-            totalFrames >= 48 -> if (frameSpacingPx > 20f) 5 else 10
-            frameSpacingPx > 30f -> 1
-            frameSpacingPx > 14f -> 5
-            else -> 10
-        }
-
+        // Ruler Ticks and Numbers
         for (f in 0 until totalFrames) {
-            val fx = frameToX(f.toFloat())
-            val isMajor = f % labelStep == 0 || f == 0 || f == totalFrames - 1
-            val isSemiMajor = f % 5 == 0
+            val tickX = frameToX(f.toFloat())
+            val isMajor = f % step == 0
+            val isSubMajor = f % 5 == 0
 
-            val tickH = if (isMajor) rulerHeightPx * 0.55f else if (isSemiMajor) rulerHeightPx * 0.35f else rulerHeightPx * 0.20f
+            val tickHeight = when {
+                isMajor -> rulerHeightPx * 0.5f
+                isSubMajor -> rulerHeightPx * 0.3f
+                else -> rulerHeightPx * 0.18f
+            }
 
             drawLine(
-                color = if (isMajor) KorvaVioletLight else if (isSemiMajor) StudioBorderLight else StudioBorder.copy(alpha = 0.7f),
-                start = Offset(fx, rulerHeightPx - tickH),
-                end = Offset(fx, rulerHeightPx),
-                strokeWidth = if (isMajor) 1.5f else 1f
+                color = if (isMajor) Color.LightGray else BlenderBorder,
+                start = Offset(tickX, rulerHeightPx - tickHeight),
+                end = Offset(tickX, rulerHeightPx),
+                strokeWidth = if (isMajor) 1f else 0.5f
             )
 
             if (isMajor) {
                 drawContext.canvas.nativeCanvas.drawText(
                     f.toString(),
-                    fx,
-                    rulerHeightPx - tickH - 2f,
-                    if (f == currentFrame.toInt()) majorTextPaint else textPaint
-                )
-            }
-
-            // Timeline Track Background Grid Lines across entire height
-            drawLine(
-                color = if (isMajor) StudioBorder.copy(alpha = 0.5f) else StudioBorder.copy(alpha = 0.15f),
-                start = Offset(fx, rulerHeightPx),
-                end = Offset(fx, size.height),
-                strokeWidth = 1f
-            )
-        }
-
-        // -------------------------------------------------------------
-        // 3. TRACK ROWS & KEYFRAME DIAMONDS & EASING SPANS
-        // -------------------------------------------------------------
-        project.layers.forEachIndexed { index, layer ->
-            val trackY = rulerHeightPx + index * trackHeightPx
-            val isSelected = layer.id == selectedLayerId
-
-            // Track Row Background (fills full width of canvas)
-            val rowBgColor = when {
-                isSelected -> KorvaVioletDark.copy(alpha = 0.22f)
-                index % 2 == 0 -> StudioPanelDark
-                else -> StudioSurfaceDark.copy(alpha = 0.45f)
-            }
-
-            drawRect(
-                color = rowBgColor,
-                topLeft = Offset(0f, trackY),
-                size = Size(size.width, trackHeightPx)
-            )
-
-            // Horizontal Track Bottom Divider
-            drawLine(
-                color = StudioBorder.copy(alpha = 0.65f),
-                start = Offset(0f, trackY + trackHeightPx),
-                end = Offset(size.width, trackY + trackHeightPx),
-                strokeWidth = 0.6f
-            )
-
-            // Keyframe Span Ribbon connecting keyframes
-            val kfs = layer.keyframes
-            if (kfs.size >= 2) {
-                for (kIndex in 0 until kfs.size - 1) {
-                    val kf1 = kfs[kIndex]
-                    val kf2 = kfs[kIndex + 1]
-                    val kf1X = frameToX(kf1.frame.toFloat())
-                    val kf2X = frameToX(kf2.frame.toFloat())
-                    val midY = trackY + trackHeightPx / 2f
-
-                    val ribbonColor = when (kf1.easing) {
-                        EasingType.LINEAR -> StudioCyan.copy(alpha = 0.4f)
-                        EasingType.EASE_IN_OUT_CUBIC -> KorvaVioletLight.copy(alpha = 0.6f)
-                        EasingType.BOUNCE_OUT -> StudioYellow.copy(alpha = 0.6f)
-                        EasingType.ELASTIC_OUT -> StudioOrange.copy(alpha = 0.6f)
-                        else -> KorvaVioletPrimary.copy(alpha = 0.4f)
-                    }
-
-                    // Draw connecting rounded capsule bar
-                    drawRoundRect(
-                        color = ribbonColor,
-                        topLeft = Offset(kf1X, midY - 2.5f),
-                        size = Size((kf2X - kf1X).coerceAtLeast(1f), 5f),
-                        cornerRadius = CornerRadius(2.5f, 2.5f)
-                    )
-                }
-            }
-
-            // Draw Keyframe Diamonds on this track
-            for (kf in kfs) {
-                val isBeingDragged = draggingKeyframe?.first == layer.id && draggingKeyframe?.second == kf.frame
-                val kfX = if (isBeingDragged) draggingKeyframe!!.third else frameToX(kf.frame.toFloat())
-                val kfY = trackY + trackHeightPx / 2f
-
-                val isCurrentKf = kf.frame == currentFrame.toInt()
-                val isSelectedKf = selectedKeyframe?.first == layer.id && selectedKeyframe?.second == kf.frame
-
-                val radius = when {
-                    isSelectedKf || isBeingDragged -> 7.5f
-                    isCurrentKf -> 6.5f
-                    else -> 5.2f
-                }
-
-                sharedDiamondPath.reset()
-                sharedDiamondPath.moveTo(kfX, kfY - radius)
-                sharedDiamondPath.lineTo(kfX + radius, kfY)
-                sharedDiamondPath.lineTo(kfX, kfY + radius)
-                sharedDiamondPath.lineTo(kfX - radius, kfY)
-                sharedDiamondPath.close()
-
-                val fillColor = when {
-                    isBeingDragged -> StudioGreen
-                    isSelectedKf -> StudioYellow
-                    isCurrentKf -> StudioOrange
-                    isSelected -> KorvaVioletLight
-                    else -> StudioCyan
-                }
-
-                // Outer Halo Glow for Selected / Dragged Keyframe
-                if (isSelectedKf || isBeingDragged) {
-                    drawPath(
-                        sharedDiamondPath,
-                        color = (if (isBeingDragged) StudioGreen else StudioYellow).copy(alpha = 0.45f),
-                        style = kfSelectGlowStroke
-                    )
-                }
-
-                // Diamond Fill
-                drawPath(sharedDiamondPath, color = fillColor)
-
-                // Diamond Crisp Outline
-                drawPath(
-                    sharedDiamondPath,
-                    color = if (isSelectedKf || isBeingDragged) Color.White else StudioBorderLight,
-                    style = kfStroke
+                    tickX,
+                    rulerHeightPx - tickHeight - 2f,
+                    textPaint
                 )
             }
         }
 
-        // -------------------------------------------------------------
-        // 4. NEXT-GEN LASER PLAYHEAD & SCRUBBER HANDLE
-        // -------------------------------------------------------------
+        // 5. Blender Signature Playhead Cursor (Blue Vertical Line with Triangular Cap)
         val playheadX = frameToX(currentFrame)
 
-        // Luminous Needle Glow
+        // Playhead Vertical Line through entire canvas
         drawLine(
-            color = KorvaVioletPrimary.copy(alpha = 0.4f),
-            start = Offset(playheadX, 0f),
-            end = Offset(playheadX, size.height),
-            strokeWidth = 4.5f
-        )
-
-        // Sharp Precision Laser Needle
-        drawLine(
-            color = KorvaVioletLight,
-            start = Offset(playheadX, 0f),
-            end = Offset(playheadX, size.height),
+            color = BlenderPlayheadBlue,
+            start = Offset(playheadX, rulerHeightPx),
+            end = Offset(playheadX, height),
             strokeWidth = 1.8f
         )
 
-        // Playhead Scrubber Flag (Laser Arrow Head)
-        val headWidth = 16f
-        val headHeight = rulerHeightPx
-        sharedPlayheadPath.reset()
-        sharedPlayheadPath.moveTo(playheadX - headWidth / 2f, 0f)
-        sharedPlayheadPath.lineTo(playheadX + headWidth / 2f, 0f)
-        sharedPlayheadPath.lineTo(playheadX + headWidth / 2f, headHeight - 7f)
-        sharedPlayheadPath.lineTo(playheadX, headHeight)
-        sharedPlayheadPath.lineTo(playheadX - headWidth / 2f, headHeight - 7f)
-        sharedPlayheadPath.close()
+        // Playhead Head on the Ruler
+        val headPath = Path().apply {
+            moveTo(playheadX - 5.5f, 0f)
+            lineTo(playheadX + 5.5f, 0f)
+            lineTo(playheadX + 5.5f, rulerHeightPx - 5f)
+            lineTo(playheadX, rulerHeightPx)
+            lineTo(playheadX - 5.5f, rulerHeightPx - 5f)
+            close()
+        }
 
-        drawPath(sharedPlayheadPath, color = KorvaVioletPrimary)
         drawPath(
-            sharedPlayheadPath,
+            path = headPath,
+            color = BlenderPlayheadHead
+        )
+
+        drawPath(
+            path = headPath,
             color = Color.White,
-            style = Stroke(width = 1.2f)
+            style = Stroke(width = 1f)
         )
     }
 }
 
-// =============================================================================
-// COMPONENT 5: MOTION GRAPH & VELOCITY CURVES PREVIEW
-// =============================================================================
-@Composable
-private fun MotionGraphTimelineView(
-    project: KorProject,
-    currentFrame: Float,
-    selectedLayerId: String?,
-    timelineZoom: Float,
-    timelineFitToScreen: Boolean,
-    onScrub: (Float) -> Unit
-) {
-    val scrollState = rememberScrollState()
-    val totalFrames = project.totalFrames
-    val startPaddingDp = 20.dp
-    val endPaddingDp = 28.dp
-
-    val selectedLayer = project.layers.find { it.id == selectedLayerId } ?: project.layers.firstOrNull()
-    val density = LocalDensity.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(StudioObsidianDark)
-    ) {
-        // Curve Legend & Channel Info Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .background(StudioSurfaceDark)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "MOTION GRAPH: ${selectedLayer?.name ?: "No Selection"}",
-                    color = TextPrimary,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // Channels Legend
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LegendItem(color = StudioCyan, label = "X Pos")
-                    LegendItem(color = StudioOrange, label = "Y Pos")
-                    LegendItem(color = StudioYellow, label = "Rotation")
-                    LegendItem(color = StudioGreen, label = "Scale")
-                }
-            }
-
-            Text(
-                text = "Cubic Bezier Interpolation",
-                color = KorvaVioletLight,
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-
-        // Curves Canvas
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .horizontalScroll(scrollState)
-        ) {
-            val availableWidthDp = maxWidth
-            val frameSpacingDp: Dp
-            val canvasWidthDp: Dp
-
-            if (timelineFitToScreen) {
-                val usableWidthDp = (availableWidthDp - startPaddingDp - endPaddingDp).coerceAtLeast(100.dp)
-                frameSpacingDp = (usableWidthDp / (totalFrames - 1).coerceAtLeast(1)).coerceIn(3.dp, 80.dp)
-                canvasWidthDp = availableWidthDp
-            } else {
-                frameSpacingDp = (20f * timelineZoom).coerceIn(6f, 80f).dp
-                val totalTrackWidthDp = startPaddingDp + (frameSpacingDp * (totalFrames - 1).coerceAtLeast(1)) + endPaddingDp
-                canvasWidthDp = maxOf(totalTrackWidthDp, availableWidthDp)
-            }
-
-            val startPaddingPx = with(density) { startPaddingDp.toPx() }
-            val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
-
-            fun frameToX(f: Float): Float = startPaddingPx + f * frameSpacingPx
-            fun xToFrame(x: Float): Float = ((x - startPaddingPx) / frameSpacingPx).coerceIn(0f, (totalFrames - 1).toFloat())
-
-            Canvas(
-                modifier = Modifier
-                    .width(canvasWidthDp)
-                    .fillMaxHeight()
-                    .pointerInput(totalFrames, frameSpacingPx, startPaddingPx) {
-                        detectTapGestures { offset ->
-                            onScrub(xToFrame(offset.x))
-                        }
-                    }
-                    .pointerInput(totalFrames, frameSpacingPx, startPaddingPx) {
-                        detectDragGestures { change, _ ->
-                            change.consume()
-                            onScrub(xToFrame(change.position.x))
-                        }
-                    }
-            ) {
-                val midY = size.height / 2f
-
-                // Grid lines across canvas
-                drawLine(
-                    color = StudioBorder,
-                    start = Offset(0f, midY),
-                    end = Offset(size.width, midY),
-                    strokeWidth = 1f
-                )
-
-                val step = if (totalFrames >= 90) 10 else 5
-                for (f in 0 until totalFrames step step) {
-                    val fx = frameToX(f.toFloat())
-                    drawLine(
-                        color = StudioBorder.copy(alpha = 0.3f),
-                        start = Offset(fx, 0f),
-                        end = Offset(fx, size.height),
-                        strokeWidth = 1f
-                    )
-                }
-
-                // Plot evaluateLayerAtFrame curves across all frames
-                if (selectedLayer != null) {
-                    val xPath = Path()
-                    val yPath = Path()
-                    val rotPath = Path()
-
-                    for (f in 0 until totalFrames) {
-                        val trans = EasingFunctions.evaluateLayerAtFrame(selectedLayer, f.toFloat())
-                        val fx = frameToX(f.toFloat())
-
-                        val mappedY_X = (midY - trans.x * 0.4f).coerceIn(10f, size.height - 10f)
-                        val mappedY_Y = (midY - trans.y * 0.4f).coerceIn(10f, size.height - 10f)
-                        val mappedY_Rot = (midY - (trans.rotation % 360f) * 0.2f).coerceIn(10f, size.height - 10f)
-
-                        if (f == 0) {
-                            xPath.moveTo(fx, mappedY_X)
-                            yPath.moveTo(fx, mappedY_Y)
-                            rotPath.moveTo(fx, mappedY_Rot)
-                        } else {
-                            xPath.lineTo(fx, mappedY_X)
-                            yPath.lineTo(fx, mappedY_Y)
-                            rotPath.lineTo(fx, mappedY_Rot)
-                        }
-                    }
-
-                    // Draw Curves
-                    drawPath(xPath, color = StudioCyan, style = Stroke(width = 2f))
-                    drawPath(yPath, color = StudioOrange, style = Stroke(width = 2f))
-                    drawPath(rotPath, color = StudioYellow, style = Stroke(width = 1.5f))
-
-                    // Draw Keyframe Points on Curves
-                    selectedLayer.keyframes.forEach { kf ->
-                        val kfX = frameToX(kf.frame.toFloat())
-                        val trans = EasingFunctions.evaluateLayerAtFrame(selectedLayer, kf.frame.toFloat())
-                        val kfY_X = (midY - trans.x * 0.4f).coerceIn(10f, size.height - 10f)
-                        val kfY_Y = (midY - trans.y * 0.4f).coerceIn(10f, size.height - 10f)
-
-                        drawCircle(color = StudioCyan, radius = 4f, center = Offset(kfX, kfY_X))
-                        drawCircle(color = Color.White, radius = 2f, center = Offset(kfX, kfY_X))
-
-                        drawCircle(color = StudioOrange, radius = 4f, center = Offset(kfX, kfY_Y))
-                        drawCircle(color = Color.White, radius = 2f, center = Offset(kfX, kfY_Y))
-                    }
-                }
-
-                // Laser Playhead on Graph
-                val playheadX = frameToX(currentFrame)
-                drawLine(
-                    color = KorvaVioletPrimary.copy(alpha = 0.5f),
-                    start = Offset(playheadX, 0f),
-                    end = Offset(playheadX, size.height),
-                    strokeWidth = 3f
-                )
-                drawLine(
-                    color = KorvaVioletLight,
-                    start = Offset(playheadX, 0f),
-                    end = Offset(playheadX, size.height),
-                    strokeWidth = 1.5f
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LegendItem(color: Color, label: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        Text(text = label, color = TextMuted, fontSize = 7.5.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-private fun getShapeColor(shapeKind: ShapeKind): Color {
-    return when (shapeKind) {
-        ShapeKind.SWORD -> StudioOrange
-        ShapeKind.SLIME -> StudioGreen
-        ShapeKind.SHIELD -> KorvaVioletLight
-        ShapeKind.COIN -> StudioYellow
-        ShapeKind.SLASH_FX -> StudioRed
-        ShapeKind.RECTANGLE -> StudioCyan
-        ShapeKind.ROUNDED_RECT -> KorvaVioletLight
-        ShapeKind.CIRCLE -> KorvaVioletPrimary
-        ShapeKind.STAR -> StudioYellow
-        ShapeKind.TRIANGLE -> StudioGreen
-        ShapeKind.DIAMOND -> StudioCyan
-        ShapeKind.ARROW -> StudioOrange
+// Utility function to get tint color for layer shapes
+private fun getShapeColor(kind: ShapeKind): Color {
+    return when (kind) {
+        ShapeKind.RECTANGLE -> Color(0xFF4D96FF)
+        ShapeKind.ROUNDED_RECT -> Color(0xFF38BDF8)
+        ShapeKind.CIRCLE -> Color(0xFFFF6B6B)
+        ShapeKind.TRIANGLE -> Color(0xFFFFD93D)
+        ShapeKind.STAR -> Color(0xFF6BCB77)
+        ShapeKind.DIAMOND -> Color(0xFFFFB84D)
+        ShapeKind.ARROW -> Color(0xFF34D399)
+        ShapeKind.SWORD -> Color(0xFFF43F5E)
+        ShapeKind.SHIELD -> Color(0xFF818CF8)
+        ShapeKind.SLIME -> Color(0xFF10B981)
+        ShapeKind.COIN -> Color(0xFFFBBF24)
+        ShapeKind.SLASH_FX -> Color(0xFFA855F7)
     }
 }
