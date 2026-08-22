@@ -13,9 +13,12 @@ import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -37,24 +40,26 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
 
         setContent {
-            MyApplicationTheme {
-                val currentScreen by viewModel.currentScreen.collectAsState()
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                MyApplicationTheme {
+                    val currentScreen by viewModel.currentScreen.collectAsState()
 
-                BackHandler(enabled = currentScreen == AppScreen.STUDIO) {
-                    viewModel.navigateToHome()
-                }
+                    BackHandler(enabled = currentScreen == AppScreen.STUDIO) {
+                        viewModel.navigateToHome()
+                    }
 
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = StudioObsidianDark
-                ) {
-                    Crossfade(
-                        targetState = currentScreen,
-                        label = "ScreenTransition"
-                    ) { screen ->
-                        when (screen) {
-                            AppScreen.HOME -> KorvaHomeScreen(viewModel = viewModel)
-                            AppScreen.STUDIO -> KorvaStudioScreen(viewModel = viewModel)
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = StudioObsidianDark
+                    ) {
+                        Crossfade(
+                            targetState = currentScreen,
+                            label = "ScreenTransition"
+                        ) { screen ->
+                            when (screen) {
+                                AppScreen.HOME -> KorvaHomeScreen(viewModel = viewModel)
+                                AppScreen.STUDIO -> KorvaStudioScreen(viewModel = viewModel)
+                            }
                         }
                     }
                 }

@@ -27,11 +27,13 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.*
@@ -77,91 +79,93 @@ fun BottomTimelinePanel(
         label = "TimelinePanelHeight"
     )
 
-    Surface(
-        color = BlenderDarkBg,
-        tonalElevation = 6.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(panelHeight)
-            .border(width = 1.dp, color = BlenderBorder)
-            .testTag("bottom_timeline_panel")
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Surface(
+            color = BlenderDarkBg,
+            tonalElevation = 6.dp,
+            modifier = modifier
+                .fillMaxWidth()
+                .height(panelHeight)
+                .border(width = 1.dp, color = BlenderBorder)
+                .testTag("bottom_timeline_panel")
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
 
-            // 1. Sleek Drag Handle to adjust height
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .background(BlenderSurface)
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val deltaDp = with(density) { dragAmount.y.toDp().value }
-                            viewModel.adjustTimelineHeight(deltaDp)
-                        }
-                    }
-                    .clickable { viewModel.toggleTimelineHeightPreset() },
-                contentAlignment = Alignment.Center
-            ) {
+                // 1. Sleek Drag Handle to adjust height
                 Box(
                     modifier = Modifier
-                        .width(40.dp)
-                        .height(2.dp)
-                        .clip(CircleShape)
-                        .background(if (isCollapsed) BlenderPlayheadBlue else BlenderBorder)
-                )
-            }
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .background(BlenderSurface)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                val deltaDp = with(density) { dragAmount.y.toDp().value }
+                                viewModel.adjustTimelineHeight(deltaDp)
+                            }
+                        }
+                        .clickable { viewModel.toggleTimelineHeightPreset() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(40.dp)
+                            .height(2.dp)
+                            .clip(CircleShape)
+                            .background(if (isCollapsed) BlenderPlayheadBlue else BlenderBorder)
+                    )
+                }
 
-            // 2. Blender-Style Transport Toolbar
-            BlenderTransportToolbar(
-                project = project,
-                currentFrame = currentFrame,
-                isPlaying = isPlaying,
-                isCollapsed = isCollapsed,
-                currentKfExists = currentKfExists,
-                timelineFitToScreen = timelineFitToScreen,
-                onToggleCollapse = { viewModel.toggleBottomTimeline() },
-                onTogglePlay = { viewModel.togglePlay() },
-                onJumpStart = { viewModel.jumpToStart() },
-                onJumpEnd = { viewModel.jumpToEnd() },
-                onStepBackward = { viewModel.stepBackward() },
-                onStepForward = { viewModel.stepForward() },
-                onJumpPrevKf = { viewModel.jumpToPrevKeyframe() },
-                onJumpNextKf = { viewModel.jumpToNextKeyframe() },
-                onToggleKeyframe = { viewModel.addOrUpdateKeyframeOnCurrentFrame() },
-                onDeleteKeyframe = { viewModel.deleteKeyframeOnCurrentFrame() },
-                onToggleFit = { viewModel.toggleTimelineFitToScreen() },
-                onZoomIn = { viewModel.zoomTimelineIn() },
-                onZoomOut = { viewModel.zoomTimelineOut() },
-                onCycleLoop = {
-                    val next = when (project.loopMode) {
-                        LoopMode.REPEAT -> LoopMode.PING_PONG
-                        LoopMode.PING_PONG -> LoopMode.ONCE
-                        LoopMode.ONCE -> LoopMode.REPEAT
-                    }
-                    viewModel.setLoopMode(next)
-                },
-                onSetFps = { viewModel.setFps(it) },
-                onSetTotalFrames = { viewModel.setTotalFrames(it) }
-            )
-
-            // 3. Blender-Style Timeline Dopesheet (Ruler + Multi-Track Canvas)
-            if (!isCollapsed) {
-                BlenderTimelineTracks(
+                // 2. Blender-Style Transport Toolbar
+                BlenderTransportToolbar(
                     project = project,
                     currentFrame = currentFrame,
-                    selectedLayerId = selectedLayerId,
-                    selectedKeyframe = selectedKeyframe,
-                    timelineZoom = timelineZoom,
+                    isPlaying = isPlaying,
+                    isCollapsed = isCollapsed,
+                    currentKfExists = currentKfExists,
                     timelineFitToScreen = timelineFitToScreen,
-                    onScrub = { viewModel.scrubToFrame(it) },
-                    onSelectLayer = { viewModel.selectLayer(it) },
-                    onSelectKeyframe = { lId, kf -> viewModel.setSelectedKeyframe(lId, kf) },
-                    onMoveKeyframe = { lId, oldF, newF -> viewModel.moveKeyframe(lId, oldF, newF) },
-                    onToggleVisibility = { viewModel.toggleLayerVisibility(it) },
-                    onToggleLock = { viewModel.toggleLayerLock(it) }
+                    onToggleCollapse = { viewModel.toggleBottomTimeline() },
+                    onTogglePlay = { viewModel.togglePlay() },
+                    onJumpStart = { viewModel.jumpToStart() },
+                    onJumpEnd = { viewModel.jumpToEnd() },
+                    onStepBackward = { viewModel.stepBackward() },
+                    onStepForward = { viewModel.stepForward() },
+                    onJumpPrevKf = { viewModel.jumpToPrevKeyframe() },
+                    onJumpNextKf = { viewModel.jumpToNextKeyframe() },
+                    onToggleKeyframe = { viewModel.addOrUpdateKeyframeOnCurrentFrame() },
+                    onDeleteKeyframe = { viewModel.deleteKeyframeOnCurrentFrame() },
+                    onToggleFit = { viewModel.toggleTimelineFitToScreen() },
+                    onZoomIn = { viewModel.zoomTimelineIn() },
+                    onZoomOut = { viewModel.zoomTimelineOut() },
+                    onCycleLoop = {
+                        val next = when (project.loopMode) {
+                            LoopMode.REPEAT -> LoopMode.PING_PONG
+                            LoopMode.PING_PONG -> LoopMode.ONCE
+                            LoopMode.ONCE -> LoopMode.REPEAT
+                        }
+                        viewModel.setLoopMode(next)
+                    },
+                    onSetFps = { viewModel.setFps(it) },
+                    onSetTotalFrames = { viewModel.setTotalFrames(it) }
                 )
+
+                // 3. Blender-Style Timeline Dopesheet (Ruler + Multi-Track Canvas)
+                if (!isCollapsed) {
+                    BlenderTimelineTracks(
+                        project = project,
+                        currentFrame = currentFrame,
+                        selectedLayerId = selectedLayerId,
+                        selectedKeyframe = selectedKeyframe,
+                        timelineZoom = timelineZoom,
+                        timelineFitToScreen = timelineFitToScreen,
+                        onScrub = { viewModel.scrubToFrame(it) },
+                        onSelectLayer = { viewModel.selectLayer(it) },
+                        onSelectKeyframe = { lId, kf -> viewModel.setSelectedKeyframe(lId, kf) },
+                        onMoveKeyframe = { lId, oldF, newF -> viewModel.moveKeyframe(lId, oldF, newF) },
+                        onToggleVisibility = { viewModel.toggleLayerVisibility(it) },
+                        onToggleLock = { viewModel.toggleLayerLock(it) }
+                    )
+                }
             }
         }
     }
@@ -724,9 +728,10 @@ private fun BlenderCanvas(
 
     val textPaint = remember(density) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(160, 200, 200, 200)
-            textSize = with(density) { 8.5.sp.toPx() }
+            color = android.graphics.Color.argb(220, 220, 230, 245)
+            textSize = with(density) { 9.sp.toPx() }
             isAntiAlias = true
+            typeface = android.graphics.Typeface.MONOSPACE
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
@@ -826,15 +831,17 @@ private fun BlenderCanvas(
         // 1. Background Grid & Tracks alternating stripes
         drawRect(color = BlenderDarkBg, size = size)
 
-        project.layers.forEachIndexed { index, layer ->
+        val trackCount = maxOf(3, project.layers.size)
+        for (index in 0 until trackCount) {
             val trackTop = rulerHeightPx + index * trackHeightPx
-            val isLayerSelected = layer.id == selectedLayerId
+            val layer = project.layers.getOrNull(index)
+            val isLayerSelected = layer != null && layer.id == selectedLayerId
 
             // Track row background
             val trackColor = if (isLayerSelected) {
-                BlenderSurfaceHighlight.copy(alpha = 0.45f)
+                BlenderSurfaceHighlight.copy(alpha = 0.5f)
             } else if (index % 2 == 0) {
-                BlenderPanelBg.copy(alpha = 0.35f)
+                BlenderPanelBg.copy(alpha = 0.4f)
             } else {
                 BlenderDarkBg
             }
@@ -847,7 +854,7 @@ private fun BlenderCanvas(
 
             // Track dividing horizontal line
             drawLine(
-                color = BlenderBorder.copy(alpha = 0.3f),
+                color = BlenderBorder.copy(alpha = 0.35f),
                 start = Offset(0f, trackTop + trackHeightPx),
                 end = Offset(width, trackTop + trackHeightPx),
                 strokeWidth = 1f
