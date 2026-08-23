@@ -126,7 +126,7 @@ data class InterpolatedTransform(
 data class KorProject(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "Untitled Animation",
-    val version: String = "1.0.0",
+    val version: String = "1.3.0",
     val createdAt: Long = System.currentTimeMillis(),
     val fps: Int = 24,
     val totalFrames: Int = 48,

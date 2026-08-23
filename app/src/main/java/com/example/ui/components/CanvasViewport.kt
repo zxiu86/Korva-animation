@@ -196,6 +196,8 @@ fun CanvasViewport(
     var currentHandle by remember { mutableStateOf(TransformHandleType.NONE) }
     var isDragging by remember { mutableStateOf(false) }
     var liveTooltipText by remember { mutableStateOf("") }
+    var dragStartTouchAngle by remember { mutableStateOf(0f) }
+    var dragStartLayerRotation by remember { mutableStateOf(0f) }
 
     // Magnetic snapping guides
     var snapGuideX by remember { mutableStateOf<Float?>(null) }
@@ -232,69 +234,80 @@ fun CanvasViewport(
                                 val local = geo.worldToLocal(startOffset)
                                 val hitRadius = 32f
 
-                                // 1. Rotation knob
-                                if (hypot(local.x - geo.rotHandle.x, local.y - geo.rotHandle.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.ROTATION_KNOB
-                                    liveTooltipText = "∠ ${selectedTransform.rotation.toInt()}°"
-                                    return@detectDragGestures
-                                }
+                                when (activeTool) {
+                                    EditorTool.ROTATE -> {
+                                        // Circular Rotation: Polar angle tracking directly around layer origin
+                                        val lx = geo.origin.x
+                                        val ly = geo.origin.y
+                                        dragStartTouchAngle = Math.toDegrees(atan2((startOffset.y - ly).toDouble(), (startOffset.x - lx).toDouble())).toFloat()
+                                        dragStartLayerRotation = selectedTransform.rotation
+                                        currentHandle = TransformHandleType.ROTATION_KNOB
+                                        liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", selectedTransform.rotation)}°"
+                                        return@detectDragGestures
+                                    }
+                                    EditorTool.SELECT -> {
+                                        // Exclusive Move / Translation
+                                        currentHandle = TransformHandleType.BODY_MOVE
+                                        liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
+                                        return@detectDragGestures
+                                    }
+                                    EditorTool.SCALE -> {
+                                        // 4 Corner scale handles
+                                        if (hypot(local.x - geo.pTL.x, local.y - geo.pTL.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.CORNER_TL
+                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.pTR.x, local.y - geo.pTR.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.CORNER_TR
+                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.pBR.x, local.y - geo.pBR.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.CORNER_BR
+                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.pBL.x, local.y - geo.pBL.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.CORNER_BL
+                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
 
-                                // 2. Pivot Knob
-                                if (hypot(local.x, local.y) <= 24f && activeTool == EditorTool.PIVOT) {
-                                    currentHandle = TransformHandleType.PIVOT_KNOB
-                                    liveTooltipText = "Pivot: (${(selectedLayer.pivotX * 100).toInt()}%, ${(selectedLayer.pivotY * 100).toInt()}%)"
-                                    return@detectDragGestures
-                                }
+                                        // 4 Edge handles
+                                        if (hypot(local.x - geo.midTop.x, local.y - geo.midTop.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.EDGE_TOP
+                                            liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.midRight.x, local.y - geo.midRight.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.EDGE_RIGHT
+                                            liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.midBottom.x, local.y - geo.midBottom.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.EDGE_BOTTOM
+                                            liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
+                                        if (hypot(local.x - geo.midLeft.x, local.y - geo.midLeft.y) <= hitRadius) {
+                                            currentHandle = TransformHandleType.EDGE_LEFT
+                                            liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                            return@detectDragGestures
+                                        }
 
-                                // 3. Corner scale handles (TL, TR, BR, BL)
-                                if (hypot(local.x - geo.pTL.x, local.y - geo.pTL.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.CORNER_TL
-                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.pTR.x, local.y - geo.pTR.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.CORNER_TR
-                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.pBR.x, local.y - geo.pBR.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.CORNER_BR
-                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.pBL.x, local.y - geo.pBL.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.CORNER_BL
-                                    liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-
-                                // 4. Edge handles
-                                if (hypot(local.x - geo.midTop.x, local.y - geo.midTop.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.EDGE_TOP
-                                    liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.midRight.x, local.y - geo.midRight.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.EDGE_RIGHT
-                                    liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.midBottom.x, local.y - geo.midBottom.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.EDGE_BOTTOM
-                                    liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-                                if (hypot(local.x - geo.midLeft.x, local.y - geo.midLeft.y) <= hitRadius) {
-                                    currentHandle = TransformHandleType.EDGE_LEFT
-                                    liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                    return@detectDragGestures
-                                }
-
-                                // 5. Body move
-                                if (geo.isInsideBody(local)) {
-                                    currentHandle = TransformHandleType.BODY_MOVE
-                                    liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
-                                    return@detectDragGestures
+                                        currentHandle = TransformHandleType.NONE
+                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
+                                        return@detectDragGestures
+                                    }
+                                    EditorTool.PIVOT -> {
+                                        currentHandle = TransformHandleType.PIVOT_KNOB
+                                        liveTooltipText = "Pivot: (${(selectedLayer.pivotX * 100).toInt()}%, ${(selectedLayer.pivotY * 100).toInt()}%)"
+                                        return@detectDragGestures
+                                    }
+                                    else -> {
+                                        currentHandle = TransformHandleType.NONE
+                                    }
                                 }
                             }
                             currentHandle = TransformHandleType.NONE
@@ -335,90 +348,30 @@ fun CanvasViewport(
                                 val signX = if (selectedTransform.scaleX < 0f) -1f else 1f
                                 val signY = if (selectedTransform.scaleY < 0f) -1f else 1f
 
-                                when (currentHandle) {
-                                    TransformHandleType.ROTATION_KNOB -> {
+                                when {
+                                    // 1. ROTATE TOOL (Ultra-smooth continuous polar angle calculation)
+                                    activeTool == EditorTool.ROTATE || currentHandle == TransformHandleType.ROTATION_KNOB -> {
                                         val lx = geo.origin.x
                                         val ly = geo.origin.y
-                                        val touchAngle = Math.toDegrees(atan2((change.position.y - ly).toDouble(), (change.position.x - lx).toDouble())).toFloat()
-                                        var adjustedAngle = (touchAngle + 90f + 360f) % 360f
+                                        val currentTouchAngle = Math.toDegrees(atan2((change.position.y - ly).toDouble(), (change.position.x - lx).toDouble())).toFloat()
+                                        val angleDelta = currentTouchAngle - dragStartTouchAngle
+                                        var targetAngle = (dragStartLayerRotation + angleDelta) % 360f
+                                        if (targetAngle < 0f) targetAngle += 360f
 
                                         if (snapToGrid) {
-                                            val nearest45 = (Math.round(adjustedAngle / 45.0) * 45).toFloat()
-                                            if (abs(adjustedAngle - nearest45) < 7f) {
-                                                adjustedAngle = nearest45
+                                            val step = 15f
+                                            val nearest = (Math.round(targetAngle / step) * step).toFloat()
+                                            if (abs(targetAngle - nearest) < 4.5f) {
+                                                targetAngle = (nearest % 360f + 360f) % 360f
                                             }
                                         }
 
-                                        viewModel.addOrUpdateKeyframeOnCurrentFrame(rotation = adjustedAngle)
-                                        liveTooltipText = "∠ ${adjustedAngle.toInt()}°"
+                                        viewModel.addOrUpdateKeyframeOnCurrentFrame(rotation = targetAngle)
+                                        liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", targetAngle)}°"
                                     }
-                                    TransformHandleType.CORNER_BR -> {
-                                        val denomX = max(abs(geo.r0), 10f) * signX
-                                        val denomY = max(abs(geo.b0), 10f) * signY
-                                        val sX = 1f + (deltaU / denomX)
-                                        val sY = 1f + (deltaV / denomY)
-                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScale(factor)
-                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.CORNER_TR -> {
-                                        val denomX = max(abs(geo.r0), 10f) * signX
-                                        val denomY = max(abs(geo.t0), 10f) * signY
-                                        val sX = 1f + (deltaU / denomX)
-                                        val sY = 1f - (deltaV / denomY)
-                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScale(factor)
-                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.CORNER_TL -> {
-                                        val denomX = max(abs(geo.l0), 10f) * signX
-                                        val denomY = max(abs(geo.t0), 10f) * signY
-                                        val sX = 1f - (deltaU / denomX)
-                                        val sY = 1f - (deltaV / denomY)
-                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScale(factor)
-                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.CORNER_BL -> {
-                                        val denomX = max(abs(geo.l0), 10f) * signX
-                                        val denomY = max(abs(geo.b0), 10f) * signY
-                                        val sX = 1f - (deltaU / denomX)
-                                        val sY = 1f + (deltaV / denomY)
-                                        val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScale(factor)
-                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.EDGE_RIGHT -> {
-                                        val denomX = max(abs(geo.r0), 10f) * signX
-                                        val sX = (1f + (deltaU / denomX)).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScaleAxis(sX, 1f)
-                                        liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.EDGE_LEFT -> {
-                                        val denomX = max(abs(geo.l0), 10f) * signX
-                                        val sX = (1f - (deltaU / denomX)).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScaleAxis(sX, 1f)
-                                        liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.EDGE_BOTTOM -> {
-                                        val denomY = max(abs(geo.b0), 10f) * signY
-                                        val sY = (1f + (deltaV / denomY)).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScaleAxis(1f, sY)
-                                        liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.EDGE_TOP -> {
-                                        val denomY = max(abs(geo.t0), 10f) * signY
-                                        val sY = (1f - (deltaV / denomY)).coerceIn(0.75f, 1.30f)
-                                        viewModel.applyCanvasScaleAxis(1f, sY)
-                                        liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
-                                    }
-                                    TransformHandleType.PIVOT_KNOB -> {
-                                        val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
-                                        val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
-                                        viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
-                                        liveTooltipText = "Pivot: (${(newPx * 100).toInt()}%, ${(newPy * 100).toInt()}%)"
-                                    }
-                                    TransformHandleType.BODY_MOVE -> {
+
+                                    // 2. MOVE / SELECT TOOL (Exclusive Translation)
+                                    activeTool == EditorTool.SELECT || currentHandle == TransformHandleType.BODY_MOVE -> {
                                         viewModel.applyCanvasTranslation(dragAmount)
                                         val nearZeroX = abs(selectedTransform.x) < 8f
                                         val nearZeroY = abs(selectedTransform.y) < 8f
@@ -426,25 +379,85 @@ fun CanvasViewport(
                                         snapGuideY = if (nearZeroY) 0f else null
                                         liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
                                     }
-                                    TransformHandleType.NONE -> {
-                                        when (activeTool) {
-                                            EditorTool.SELECT -> viewModel.applyCanvasTranslation(dragAmount)
-                                            EditorTool.ROTATE -> {
-                                                val rotDelta = (dragAmount.x - dragAmount.y) * 0.4f
-                                                viewModel.applyCanvasRotation(rotDelta)
+
+                                    // 3. SCALE TOOL (Exclusive Scaling)
+                                    activeTool == EditorTool.SCALE -> {
+                                        when (currentHandle) {
+                                            TransformHandleType.CORNER_BR -> {
+                                                val denomX = max(abs(geo.r0), 10f) * signX
+                                                val denomY = max(abs(geo.b0), 10f) * signY
+                                                val sX = 1f + (deltaU / denomX)
+                                                val sY = 1f + (deltaV / denomY)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScale(factor)
+                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
                                             }
-                                            EditorTool.SCALE -> {
+                                            TransformHandleType.CORNER_TR -> {
+                                                val denomX = max(abs(geo.r0), 10f) * signX
+                                                val denomY = max(abs(geo.t0), 10f) * signY
+                                                val sX = 1f + (deltaU / denomX)
+                                                val sY = 1f - (deltaV / denomY)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScale(factor)
+                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.CORNER_TL -> {
+                                                val denomX = max(abs(geo.l0), 10f) * signX
+                                                val denomY = max(abs(geo.t0), 10f) * signY
+                                                val sX = 1f - (deltaU / denomX)
+                                                val sY = 1f - (deltaV / denomY)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScale(factor)
+                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.CORNER_BL -> {
+                                                val denomX = max(abs(geo.l0), 10f) * signX
+                                                val denomY = max(abs(geo.b0), 10f) * signY
+                                                val sX = 1f - (deltaU / denomX)
+                                                val sY = 1f + (deltaV / denomY)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScale(factor)
+                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.EDGE_RIGHT -> {
+                                                val denomX = max(abs(geo.r0), 10f) * signX
+                                                val sX = (1f + (deltaU / denomX)).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScaleAxis(sX, 1f)
+                                                liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.EDGE_LEFT -> {
+                                                val denomX = max(abs(geo.l0), 10f) * signX
+                                                val sX = (1f - (deltaU / denomX)).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScaleAxis(sX, 1f)
+                                                liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.EDGE_BOTTOM -> {
+                                                val denomY = max(abs(geo.b0), 10f) * signY
+                                                val sY = (1f + (deltaV / denomY)).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScaleAxis(1f, sY)
+                                                liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                            }
+                                            TransformHandleType.EDGE_TOP -> {
+                                                val denomY = max(abs(geo.t0), 10f) * signY
+                                                val sY = (1f - (deltaV / denomY)).coerceIn(0.75f, 1.30f)
+                                                viewModel.applyCanvasScaleAxis(1f, sY)
+                                                liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                            }
+                                            else -> {
                                                 val scaleStep = (dragAmount.x - dragAmount.y) * 0.008f
                                                 val scaleFactor = (1f + scaleStep).coerceIn(0.85f, 1.15f)
                                                 viewModel.applyCanvasScale(scaleFactor)
+                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * scaleFactor) * 100).toInt()}%"
                                             }
-                                            EditorTool.PIVOT -> {
-                                                val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
-                                                val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
-                                                viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
-                                            }
-                                            else -> {}
                                         }
+                                    }
+
+                                    // 4. PIVOT TOOL
+                                    activeTool == EditorTool.PIVOT || currentHandle == TransformHandleType.PIVOT_KNOB -> {
+                                        val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
+                                        val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
+                                        viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
+                                        liveTooltipText = "Pivot: (${(newPx * 100).toInt()}%, ${(newPy * 100).toInt()}%)"
                                     }
                                 }
                             }
@@ -456,19 +469,21 @@ fun CanvasViewport(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(project.layers, currentFrame, zoom, pan) {
-                    detectTapGestures { tapOffset ->
-                        val stageCenterX = size.width / 2f + pan.x
-                        val stageCenterY = size.height / 2f + pan.y
-                        val sortedLayers = project.layers.filter { it.isVisible && !it.isLocked }.sortedByDescending { it.zIndex }
+                .pointerInput(project.layers, currentFrame, zoom, pan, activeTool) {
+                    if (activeTool != EditorTool.HAND_PAN) {
+                        detectTapGestures { tapOffset ->
+                            val stageCenterX = size.width / 2f + pan.x
+                            val stageCenterY = size.height / 2f + pan.y
+                            val sortedLayers = project.layers.filter { it.isVisible && !it.isLocked }.sortedByDescending { it.zIndex }
 
-                        for (layer in sortedLayers) {
-                            val transform = EasingFunctions.evaluateLayerAtFrame(layer, currentFrame)
-                            val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, zoom)
-                            val local = geo.worldToLocal(tapOffset)
-                            if (geo.isInsideBody(local)) {
-                                viewModel.selectLayer(layer.id)
-                                return@detectTapGestures
+                            for (layer in sortedLayers) {
+                                val transform = EasingFunctions.evaluateLayerAtFrame(layer, currentFrame)
+                                val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, zoom)
+                                val local = geo.worldToLocal(tapOffset)
+                                if (geo.isInsideBody(local)) {
+                                    viewModel.selectLayer(layer.id)
+                                    return@detectTapGestures
+                                }
                             }
                         }
                     }
@@ -725,47 +740,158 @@ fun CanvasViewport(
                     zoom = zoom
                 )
 
-                withTransform({
-                    translate(geo.origin.x, geo.origin.y)
-                    rotate(geo.rotationDeg)
-                }) {
-                    // Exact 4-edge Bounding Box
-                    drawLine(KorvaVioletPrimary, geo.pTL, geo.pTR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
-                    drawLine(KorvaVioletPrimary, geo.pTR, geo.pBR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
-                    drawLine(KorvaVioletPrimary, geo.pBR, geo.pBL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
-                    drawLine(KorvaVioletPrimary, geo.pBL, geo.pTL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                when (activeTool) {
+                    EditorTool.ROTATE -> {
+                        // 🔵 SPECIALIZED CIRCULAR ROTATION DIAL GIZMO 🔵
+                        val rotRadius = max(max(abs(geo.r0 - geo.l0), abs(geo.b0 - geo.t0)) * 0.65f + 32f * zoom, 56f)
 
-                    // 4 Corner Scale Handles
-                    val handleRadius = 7f
-                    val handleColor = Color.White
-                    val handleStroke = if (activeTool == EditorTool.SCALE) StudioOrange else KorvaVioletPrimary
+                        // Subtle bounding box
+                        withTransform({
+                            translate(geo.origin.x, geo.origin.y)
+                            rotate(geo.rotationDeg)
+                        }) {
+                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pTL, geo.pTR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pTR, geo.pBR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pBR, geo.pBL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pBL, geo.pTL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                        }
 
-                    listOf(geo.pTL, geo.pTR, geo.pBR, geo.pBL).forEach { cornerPt ->
-                        drawCircle(color = handleColor, radius = handleRadius, center = cornerPt)
-                        drawCircle(color = handleStroke, radius = handleRadius, center = cornerPt, style = Stroke(2.2f))
+                        // Outer glowing circular track
+                        drawCircle(
+                            color = StudioCyan.copy(alpha = 0.18f),
+                            radius = rotRadius + 4f,
+                            center = geo.origin,
+                            style = Stroke(width = 6f)
+                        )
+
+                        // Main Circular Orbit Track
+                        drawCircle(
+                            color = StudioCyan,
+                            radius = rotRadius,
+                            center = geo.origin,
+                            style = Stroke(width = 2.2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f))
+                        )
+
+                        // 8 Cardinal & Diagonal Compass Ticks (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
+                        for (deg in 0 until 360 step 45) {
+                            val rad = Math.toRadians(deg.toDouble()).toFloat()
+                            val tLen = if (deg % 90 == 0) 9f else 5f
+                            val p1 = Offset(geo.origin.x + (rotRadius - tLen) * cos(rad), geo.origin.y + (rotRadius - tLen) * sin(rad))
+                            val p2 = Offset(geo.origin.x + (rotRadius + tLen) * cos(rad), geo.origin.y + (rotRadius + tLen) * sin(rad))
+                            drawLine(
+                                color = if (deg % 90 == 0) StudioCyan else StudioCyan.copy(alpha = 0.5f),
+                                start = p1,
+                                end = p2,
+                                strokeWidth = if (deg % 90 == 0) 2.2f else 1.2f
+                            )
+                        }
+
+                        // Radial pointer line from origin to knob
+                        val curRad = Math.toRadians(geo.rotationDeg.toDouble() - 90.0).toFloat()
+                        val knobPos = Offset(geo.origin.x + rotRadius * cos(curRad), geo.origin.y + rotRadius * sin(curRad))
+                        drawLine(
+                            color = StudioCyan,
+                            start = geo.origin,
+                            end = knobPos,
+                            strokeWidth = 2.2f
+                        )
+
+                        // Blue Circular Dial Control Knob 🔵
+                        drawCircle(color = Color(0x660284C7), radius = 18f, center = knobPos)
+                        drawCircle(color = Color(0xFF0284C7), radius = 11f, center = knobPos)
+                        drawCircle(color = StudioCyan, radius = 11f, center = knobPos, style = Stroke(2.5f))
+                        drawCircle(color = Color.White, radius = 4f, center = knobPos)
+
+                        // Center Pivot Pin
+                        drawCircle(color = StudioCyan, radius = 5.5f, center = geo.origin)
+                        drawCircle(color = Color.White, radius = 2.2f, center = geo.origin)
                     }
 
-                    // 4 Edge Midpoint Handles
-                    listOf(geo.midTop, geo.midRight, geo.midBottom, geo.midLeft).forEach { midPt ->
-                        drawCircle(color = StudioOrange, radius = 4.5f, center = midPt)
-                        drawCircle(color = Color.White, radius = 1.8f, center = midPt)
+                    EditorTool.SELECT -> {
+                        // EXCLUSIVE MOVE & SELECTION GIZMO
+                        withTransform({
+                            translate(geo.origin.x, geo.origin.y)
+                            rotate(geo.rotationDeg)
+                        }) {
+                            // Primary Bounding Box
+                            drawLine(KorvaVioletPrimary, geo.pTL, geo.pTR, strokeWidth = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary, geo.pTR, geo.pBR, strokeWidth = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary, geo.pBR, geo.pBL, strokeWidth = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(KorvaVioletPrimary, geo.pBL, geo.pTL, strokeWidth = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
+
+                            // 4 Corner Brackets
+                            val cLen = 12f
+                            listOf(
+                                Pair(geo.pTL, Offset(1f, 1f)),
+                                Pair(geo.pTR, Offset(-1f, 1f)),
+                                Pair(geo.pBR, Offset(-1f, -1f)),
+                                Pair(geo.pBL, Offset(1f, -1f))
+                            ).forEach { (corner, dir) ->
+                                drawLine(Color.White, corner, Offset(corner.x + dir.x * cLen, corner.y), strokeWidth = 2.5f)
+                                drawLine(Color.White, corner, Offset(corner.x, corner.y + dir.y * cLen), strokeWidth = 2.5f)
+                            }
+
+                            // Center Move Pin
+                            drawCircle(color = KorvaVioletPrimary, radius = 6.5f, center = Offset.Zero)
+                            drawCircle(color = Color.White, radius = 2.5f, center = Offset.Zero)
+                        }
                     }
 
-                    // Rotation Stem & Knob
-                    drawLine(
-                        color = KorvaVioletPrimary,
-                        start = geo.midTop,
-                        end = geo.rotHandle,
-                        strokeWidth = 2f
-                    )
-                    drawCircle(color = Color.White, radius = 7.5f, center = geo.rotHandle)
-                    drawCircle(color = KorvaVioletPrimary, radius = 7.5f, center = geo.rotHandle, style = Stroke(2.5f))
+                    EditorTool.SCALE -> {
+                        // EXCLUSIVE SCALE GIZMO
+                        withTransform({
+                            translate(geo.origin.x, geo.origin.y)
+                            rotate(geo.rotationDeg)
+                        }) {
+                            drawLine(StudioOrange, geo.pTL, geo.pTR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioOrange, geo.pTR, geo.pBR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioOrange, geo.pBR, geo.pBL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioOrange, geo.pBL, geo.pTL, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
 
-                    // Pivot Indicator at (0, 0)
-                    drawCircle(color = StudioCyan, radius = 5.5f, center = Offset.Zero)
-                    drawCircle(color = Color.White, radius = 2.2f, center = Offset.Zero)
-                    drawLine(color = StudioCyan, start = Offset(-8f, 0f), end = Offset(8f, 0f), strokeWidth = 1.2f)
-                    drawLine(color = StudioCyan, start = Offset(0f, -8f), end = Offset(0f, 8f), strokeWidth = 1.2f)
+                            val handleRadius = 8f
+                            listOf(geo.pTL, geo.pTR, geo.pBR, geo.pBL).forEach { cornerPt ->
+                                drawCircle(color = Color.White, radius = handleRadius, center = cornerPt)
+                                drawCircle(color = StudioOrange, radius = handleRadius, center = cornerPt, style = Stroke(2.5f))
+                            }
+
+                            listOf(geo.midTop, geo.midRight, geo.midBottom, geo.midLeft).forEach { midPt ->
+                                drawCircle(color = StudioOrange, radius = 5.5f, center = midPt)
+                                drawCircle(color = Color.White, radius = 2.2f, center = midPt)
+                            }
+                        }
+                    }
+
+                    EditorTool.PIVOT -> {
+                        // PIVOT ANCHOR GIZMO
+                        withTransform({
+                            translate(geo.origin.x, geo.origin.y)
+                            rotate(geo.rotationDeg)
+                        }) {
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTL, geo.pTR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTR, geo.pBR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pBR, geo.pBL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pBL, geo.pTL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+
+                            drawCircle(color = Color(0x4406B6D4), radius = 18f, center = Offset.Zero)
+                            drawCircle(color = StudioCyan, radius = 9f, center = Offset.Zero, style = Stroke(2f))
+                            drawCircle(color = Color.White, radius = 3.5f, center = Offset.Zero)
+                            drawLine(color = StudioCyan, start = Offset(-16f, 0f), end = Offset(16f, 0f), strokeWidth = 2f)
+                            drawLine(color = StudioCyan, start = Offset(0f, -16f), end = Offset(0f, 16f), strokeWidth = 2f)
+                        }
+                    }
+
+                    EditorTool.HAND_PAN -> {
+                        // HAND PAN: Minimal subtle outline
+                        withTransform({
+                            translate(geo.origin.x, geo.origin.y)
+                            rotate(geo.rotationDeg)
+                        }) {
+                            drawLine(Color.White.copy(alpha = 0.25f), geo.pTL, geo.pTR, strokeWidth = 1f)
+                            drawLine(Color.White.copy(alpha = 0.25f), geo.pTR, geo.pBR, strokeWidth = 1f)
+                            drawLine(Color.White.copy(alpha = 0.25f), geo.pBR, geo.pBL, strokeWidth = 1f)
+                            drawLine(Color.White.copy(alpha = 0.25f), geo.pBL, geo.pTL, strokeWidth = 1f)
+                        }
+                    }
                 }
             }
         }
