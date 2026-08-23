@@ -196,8 +196,18 @@ fun CanvasViewport(
     var currentHandle by remember { mutableStateOf(TransformHandleType.NONE) }
     var isDragging by remember { mutableStateOf(false) }
     var liveTooltipText by remember { mutableStateOf("") }
+
+    // Stable gesture origin and anchor variables
+    var dragStartTouchPos by remember { mutableStateOf(Offset.Zero) }
+    var dragStartOrigin by remember { mutableStateOf(Offset.Zero) }
     var dragStartTouchAngle by remember { mutableStateOf(0f) }
     var dragStartLayerRotation by remember { mutableStateOf(0f) }
+    var dragStartLayerX by remember { mutableStateOf(0f) }
+    var dragStartLayerY by remember { mutableStateOf(0f) }
+    var dragStartScaleX by remember { mutableStateOf(1f) }
+    var dragStartScaleY by remember { mutableStateOf(1f) }
+    var dragStartPivotX by remember { mutableStateOf(0.5f) }
+    var dragStartPivotY by remember { mutableStateOf(0.5f) }
 
     // Magnetic snapping guides
     var snapGuideX by remember { mutableStateOf<Float?>(null) }
@@ -209,7 +219,7 @@ fun CanvasViewport(
             .background(StudioObsidianDark)
             .clipToBounds()
             .testTag("canvas_viewport")
-            .pointerInput(activeTool, selectedLayerId, currentFrame, zoom, pan, selectedTransform, snapToGrid) {
+            .pointerInput(activeTool, selectedLayerId) {
                 if (activeTool == EditorTool.HAND_PAN) {
                     detectTransformGestures { _, panDelta, zoomDelta, _ ->
                         viewModel.updateViewportPan(panDelta)
@@ -218,99 +228,87 @@ fun CanvasViewport(
                 } else {
                     detectDragGestures(
                         onDragStart = { startOffset ->
-                            val stageCenterX = size.width / 2f + pan.x
-                            val stageCenterY = size.height / 2f + pan.y
+                            val currentProject = viewModel.project.value
+                            val currentF = viewModel.currentFrame.value
+                            val currentZoom = viewModel.viewportZoom.value
+                            val currentPan = viewModel.viewportPan.value
+                            val stageCenterX = size.width / 2f + currentPan.x
+                            val stageCenterY = size.height / 2f + currentPan.y
+
+                            val layer = currentProject.layers.find { it.id == selectedLayerId }
+                            if (layer == null || layer.isLocked || viewModel.isPlaying.value) {
+                                currentHandle = TransformHandleType.NONE
+                                return@detectDragGestures
+                            }
+
+                            val tf = EasingFunctions.evaluateLayerAtFrame(layer, currentF)
+                            val geo = computeViewportGeometry(
+                                layer = layer,
+                                transform = tf,
+                                stageCenterX = stageCenterX,
+                                stageCenterY = stageCenterY,
+                                zoom = currentZoom
+                            )
+
+                            val local = geo.worldToLocal(startOffset)
+                            val hitRadius = 36f
+
+                            dragStartTouchPos = startOffset
+                            dragStartOrigin = geo.origin
+                            dragStartLayerX = tf.x
+                            dragStartLayerY = tf.y
+                            dragStartLayerRotation = tf.rotation
+                            dragStartScaleX = tf.scaleX
+                            dragStartScaleY = tf.scaleY
+                            dragStartPivotX = layer.pivotX
+                            dragStartPivotY = layer.pivotY
                             isDragging = true
 
-                            if (selectedLayer != null && selectedTransform != null && !isPlaying) {
-                                val geo = computeViewportGeometry(
-                                    layer = selectedLayer,
-                                    transform = selectedTransform,
-                                    stageCenterX = stageCenterX,
-                                    stageCenterY = stageCenterY,
-                                    zoom = zoom
-                                )
-
-                                val local = geo.worldToLocal(startOffset)
-                                val hitRadius = 32f
-
-                                when (activeTool) {
-                                    EditorTool.ROTATE -> {
-                                        // Circular Rotation: Polar angle tracking directly around layer origin
-                                        val lx = geo.origin.x
-                                        val ly = geo.origin.y
-                                        dragStartTouchAngle = Math.toDegrees(atan2((startOffset.y - ly).toDouble(), (startOffset.x - lx).toDouble())).toFloat()
-                                        dragStartLayerRotation = selectedTransform.rotation
-                                        currentHandle = TransformHandleType.ROTATION_KNOB
-                                        liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", selectedTransform.rotation)}°"
-                                        return@detectDragGestures
-                                    }
-                                    EditorTool.SELECT -> {
-                                        // Exclusive Move / Translation
-                                        currentHandle = TransformHandleType.BODY_MOVE
-                                        liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
-                                        return@detectDragGestures
-                                    }
-                                    EditorTool.SCALE -> {
-                                        // 4 Corner scale handles
-                                        if (hypot(local.x - geo.pTL.x, local.y - geo.pTL.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.CORNER_TL
-                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.pTR.x, local.y - geo.pTR.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.CORNER_TR
-                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.pBR.x, local.y - geo.pBR.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.CORNER_BR
-                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.pBL.x, local.y - geo.pBL.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.CORNER_BL
-                                            liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-
-                                        // 4 Edge handles
-                                        if (hypot(local.x - geo.midTop.x, local.y - geo.midTop.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.EDGE_TOP
-                                            liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.midRight.x, local.y - geo.midRight.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.EDGE_RIGHT
-                                            liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.midBottom.x, local.y - geo.midBottom.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.EDGE_BOTTOM
-                                            liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-                                        if (hypot(local.x - geo.midLeft.x, local.y - geo.midLeft.y) <= hitRadius) {
-                                            currentHandle = TransformHandleType.EDGE_LEFT
-                                            liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                            return@detectDragGestures
-                                        }
-
-                                        currentHandle = TransformHandleType.NONE
-                                        liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX) * 100).toInt()}%"
-                                        return@detectDragGestures
-                                    }
-                                    EditorTool.PIVOT -> {
-                                        currentHandle = TransformHandleType.PIVOT_KNOB
-                                        liveTooltipText = "Pivot: (${(selectedLayer.pivotX * 100).toInt()}%, ${(selectedLayer.pivotY * 100).toInt()}%)"
-                                        return@detectDragGestures
-                                    }
-                                    else -> {
+                            when (activeTool) {
+                                EditorTool.ROTATE -> {
+                                    // Circular Rotation: Polar angle tracking directly around static layer origin
+                                    val lx = geo.origin.x
+                                    val ly = geo.origin.y
+                                    dragStartTouchAngle = Math.toDegrees(atan2((startOffset.y - ly).toDouble(), (startOffset.x - lx).toDouble())).toFloat()
+                                    currentHandle = TransformHandleType.ROTATION_KNOB
+                                    liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", tf.rotation)}°"
+                                }
+                                EditorTool.SELECT -> {
+                                    // Exclusive Move / Translation
+                                    currentHandle = TransformHandleType.BODY_MOVE
+                                    liveTooltipText = "X: ${tf.x.toInt()}px, Y: ${tf.y.toInt()}px"
+                                }
+                                EditorTool.SCALE -> {
+                                    // 4 Corner scale handles
+                                    if (hypot(local.x - geo.pTL.x, local.y - geo.pTL.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.CORNER_TL
+                                    } else if (hypot(local.x - geo.pTR.x, local.y - geo.pTR.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.CORNER_TR
+                                    } else if (hypot(local.x - geo.pBR.x, local.y - geo.pBR.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.CORNER_BR
+                                    } else if (hypot(local.x - geo.pBL.x, local.y - geo.pBL.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.CORNER_BL
+                                    } else if (hypot(local.x - geo.midTop.x, local.y - geo.midTop.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.EDGE_TOP
+                                    } else if (hypot(local.x - geo.midRight.x, local.y - geo.midRight.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.EDGE_RIGHT
+                                    } else if (hypot(local.x - geo.midBottom.x, local.y - geo.midBottom.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.EDGE_BOTTOM
+                                    } else if (hypot(local.x - geo.midLeft.x, local.y - geo.midLeft.y) <= hitRadius) {
+                                        currentHandle = TransformHandleType.EDGE_LEFT
+                                    } else {
                                         currentHandle = TransformHandleType.NONE
                                     }
+                                    liveTooltipText = "Scale: ${(abs(tf.scaleX) * 100).toInt()}%"
+                                }
+                                EditorTool.PIVOT -> {
+                                    currentHandle = TransformHandleType.PIVOT_KNOB
+                                    liveTooltipText = "Pivot: (${(layer.pivotX * 100).toInt()}%, ${(layer.pivotY * 100).toInt()}%)"
+                                }
+                                else -> {
+                                    currentHandle = TransformHandleType.NONE
                                 }
                             }
-                            currentHandle = TransformHandleType.NONE
                         },
                         onDragEnd = {
                             currentHandle = TransformHandleType.NONE
@@ -326,140 +324,168 @@ fun CanvasViewport(
                             snapGuideY = null
                             liveTooltipText = ""
                         },
-                        onDrag = { change, dragAmount ->
+                        onDrag = { change, _ ->
                             change.consume()
+                            val currentZoom = viewModel.viewportZoom.value
+                            val isSnap = viewModel.snapToGrid.value
 
-                            if (selectedLayer != null && selectedTransform != null) {
-                                val stageCenterX = size.width / 2f + pan.x
-                                val stageCenterY = size.height / 2f + pan.y
-                                val geo = computeViewportGeometry(
-                                    layer = selectedLayer,
-                                    transform = selectedTransform,
-                                    stageCenterX = stageCenterX,
-                                    stageCenterY = stageCenterY,
-                                    zoom = zoom
-                                )
+                            when (activeTool) {
+                                // 1. ROTATE TOOL (Zero position drift, exact polar angle)
+                                EditorTool.ROTATE -> {
+                                    val lx = dragStartOrigin.x
+                                    val ly = dragStartOrigin.y
+                                    val currentTouchAngle = Math.toDegrees(atan2((change.position.y - ly).toDouble(), (change.position.x - lx).toDouble())).toFloat()
+                                    var angleDelta = currentTouchAngle - dragStartTouchAngle
+                                    while (angleDelta > 180f) angleDelta -= 360f
+                                    while (angleDelta < -180f) angleDelta += 360f
 
-                                val cosA = cos(geo.rotationRad).toFloat()
-                                val sinA = sin(geo.rotationRad).toFloat()
-                                val deltaU = dragAmount.x * cosA + dragAmount.y * sinA
-                                val deltaV = -dragAmount.x * sinA + dragAmount.y * cosA
+                                    var targetAngle = (dragStartLayerRotation + angleDelta) % 360f
+                                    if (targetAngle < 0f) targetAngle += 360f
 
-                                val signX = if (selectedTransform.scaleX < 0f) -1f else 1f
-                                val signY = if (selectedTransform.scaleY < 0f) -1f else 1f
-
-                                when {
-                                    // 1. ROTATE TOOL (Ultra-smooth continuous polar angle calculation)
-                                    activeTool == EditorTool.ROTATE || currentHandle == TransformHandleType.ROTATION_KNOB -> {
-                                        val lx = geo.origin.x
-                                        val ly = geo.origin.y
-                                        val currentTouchAngle = Math.toDegrees(atan2((change.position.y - ly).toDouble(), (change.position.x - lx).toDouble())).toFloat()
-                                        val angleDelta = currentTouchAngle - dragStartTouchAngle
-                                        var targetAngle = (dragStartLayerRotation + angleDelta) % 360f
-                                        if (targetAngle < 0f) targetAngle += 360f
-
-                                        if (snapToGrid) {
-                                            val step = 15f
-                                            val nearest = (Math.round(targetAngle / step) * step).toFloat()
-                                            if (abs(targetAngle - nearest) < 4.5f) {
-                                                targetAngle = (nearest % 360f + 360f) % 360f
-                                            }
+                                    if (isSnap) {
+                                        val step = 15f
+                                        val nearest = (Math.round(targetAngle / step) * step).toFloat()
+                                        if (abs(targetAngle - nearest) < 4.5f) {
+                                            targetAngle = (nearest % 360f + 360f) % 360f
                                         }
-
-                                        viewModel.addOrUpdateKeyframeOnCurrentFrame(rotation = targetAngle)
-                                        liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", targetAngle)}°"
                                     }
 
-                                    // 2. MOVE / SELECT TOOL (Exclusive Translation)
-                                    activeTool == EditorTool.SELECT || currentHandle == TransformHandleType.BODY_MOVE -> {
-                                        viewModel.applyCanvasTranslation(dragAmount)
-                                        val nearZeroX = abs(selectedTransform.x) < 8f
-                                        val nearZeroY = abs(selectedTransform.y) < 8f
-                                        snapGuideX = if (nearZeroX) 0f else null
-                                        snapGuideY = if (nearZeroY) 0f else null
-                                        liveTooltipText = "X: ${selectedTransform.x.toInt()}px, Y: ${selectedTransform.y.toInt()}px"
+                                    viewModel.addOrUpdateKeyframeOnCurrentFrame(rotation = targetAngle)
+                                    liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", targetAngle)}°"
+                                }
+
+                                // 2. MOVE / SELECT TOOL (Pure translation from drag start baseline)
+                                EditorTool.SELECT -> {
+                                    val totalDeltaX = (change.position.x - dragStartTouchPos.x) / currentZoom
+                                    val totalDeltaY = (change.position.y - dragStartTouchPos.y) / currentZoom
+
+                                    var newX = dragStartLayerX + totalDeltaX
+                                    var newY = dragStartLayerY + totalDeltaY
+
+                                    if (isSnap) {
+                                        val sz = viewModel.gridSize.value.toFloat()
+                                        newX = kotlin.math.round(newX / sz) * sz
+                                        newY = kotlin.math.round(newY / sz) * sz
                                     }
 
-                                    // 3. SCALE TOOL (Exclusive Scaling)
-                                    activeTool == EditorTool.SCALE -> {
+                                    val nearZeroX = abs(newX) < 8f
+                                    val nearZeroY = abs(newY) < 8f
+                                    snapGuideX = if (nearZeroX) 0f else null
+                                    snapGuideY = if (nearZeroY) 0f else null
+
+                                    viewModel.addOrUpdateKeyframeOnCurrentFrame(x = newX, y = newY)
+                                    liveTooltipText = "X: ${newX.toInt()}px, Y: ${newY.toInt()}px"
+                                }
+
+                                // 3. SCALE TOOL (Exact handle-guided scaling without drift)
+                                EditorTool.SCALE -> {
+                                    val totalDeltaX = (change.position.x - dragStartTouchPos.x)
+                                    val totalDeltaY = (change.position.y - dragStartTouchPos.y)
+                                    val currentLayer = viewModel.getSelectedLayer()
+                                    if (currentLayer != null) {
+                                        val baseW = max(currentLayer.width * currentZoom, 20f)
+                                        val baseH = max(currentLayer.height * currentZoom, 20f)
+                                        val rotRad = Math.toRadians(dragStartLayerRotation.toDouble())
+                                        val cosA = cos(rotRad).toFloat()
+                                        val sinA = sin(rotRad).toFloat()
+                                        val localDeltaX = totalDeltaX * cosA + totalDeltaY * sinA
+                                        val localDeltaY = -totalDeltaX * sinA + totalDeltaY * cosA
+
+                                        val signX = if (dragStartScaleX < 0f) -1f else 1f
+                                        val signY = if (dragStartScaleY < 0f) -1f else 1f
+
                                         when (currentHandle) {
                                             TransformHandleType.CORNER_BR -> {
-                                                val denomX = max(abs(geo.r0), 10f) * signX
-                                                val denomY = max(abs(geo.b0), 10f) * signY
-                                                val sX = 1f + (deltaU / denomX)
-                                                val sY = 1f + (deltaV / denomY)
-                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScale(factor)
-                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                                val sX = 1f + (localDeltaX / baseW)
+                                                val sY = 1f + (localDeltaY / baseH)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factor).coerceIn(0.02f, 15f) * signX
+                                                val targetSy = (abs(dragStartScaleY) * factor).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx, scaleY = targetSy)
+                                                liveTooltipText = "Scale: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.CORNER_TR -> {
-                                                val denomX = max(abs(geo.r0), 10f) * signX
-                                                val denomY = max(abs(geo.t0), 10f) * signY
-                                                val sX = 1f + (deltaU / denomX)
-                                                val sY = 1f - (deltaV / denomY)
-                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScale(factor)
-                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                                val sX = 1f + (localDeltaX / baseW)
+                                                val sY = 1f - (localDeltaY / baseH)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factor).coerceIn(0.02f, 15f) * signX
+                                                val targetSy = (abs(dragStartScaleY) * factor).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx, scaleY = targetSy)
+                                                liveTooltipText = "Scale: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.CORNER_TL -> {
-                                                val denomX = max(abs(geo.l0), 10f) * signX
-                                                val denomY = max(abs(geo.t0), 10f) * signY
-                                                val sX = 1f - (deltaU / denomX)
-                                                val sY = 1f - (deltaV / denomY)
-                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScale(factor)
-                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                                val sX = 1f - (localDeltaX / baseW)
+                                                val sY = 1f - (localDeltaY / baseH)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factor).coerceIn(0.02f, 15f) * signX
+                                                val targetSy = (abs(dragStartScaleY) * factor).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx, scaleY = targetSy)
+                                                liveTooltipText = "Scale: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.CORNER_BL -> {
-                                                val denomX = max(abs(geo.l0), 10f) * signX
-                                                val denomY = max(abs(geo.b0), 10f) * signY
-                                                val sX = 1f - (deltaU / denomX)
-                                                val sY = 1f + (deltaV / denomY)
-                                                val factor = ((sX + sY) / 2f).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScale(factor)
-                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * factor) * 100).toInt()}%"
+                                                val sX = 1f - (localDeltaX / baseW)
+                                                val sY = 1f + (localDeltaY / baseH)
+                                                val factor = ((sX + sY) / 2f).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factor).coerceIn(0.02f, 15f) * signX
+                                                val targetSy = (abs(dragStartScaleY) * factor).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx, scaleY = targetSy)
+                                                liveTooltipText = "Scale: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.EDGE_RIGHT -> {
-                                                val denomX = max(abs(geo.r0), 10f) * signX
-                                                val sX = (1f + (deltaU / denomX)).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScaleAxis(sX, 1f)
-                                                liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                                val factorX = (1f + localDeltaX / baseW).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factorX).coerceIn(0.02f, 15f) * signX
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx)
+                                                liveTooltipText = "Scale X: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.EDGE_LEFT -> {
-                                                val denomX = max(abs(geo.l0), 10f) * signX
-                                                val sX = (1f - (deltaU / denomX)).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScaleAxis(sX, 1f)
-                                                liveTooltipText = "Scale X: ${(abs(selectedTransform.scaleX * sX) * 100).toInt()}%"
+                                                val factorX = (1f - localDeltaX / baseW).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factorX).coerceIn(0.02f, 15f) * signX
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx)
+                                                liveTooltipText = "Scale X: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                             TransformHandleType.EDGE_BOTTOM -> {
-                                                val denomY = max(abs(geo.b0), 10f) * signY
-                                                val sY = (1f + (deltaV / denomY)).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScaleAxis(1f, sY)
-                                                liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                                val factorY = (1f + localDeltaY / baseH).coerceIn(0.1f, 10f)
+                                                val targetSy = (abs(dragStartScaleY) * factorY).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleY = targetSy)
+                                                liveTooltipText = "Scale Y: ${(abs(targetSy) * 100).toInt()}%"
                                             }
                                             TransformHandleType.EDGE_TOP -> {
-                                                val denomY = max(abs(geo.t0), 10f) * signY
-                                                val sY = (1f - (deltaV / denomY)).coerceIn(0.75f, 1.30f)
-                                                viewModel.applyCanvasScaleAxis(1f, sY)
-                                                liveTooltipText = "Scale Y: ${(abs(selectedTransform.scaleY * sY) * 100).toInt()}%"
+                                                val factorY = (1f - localDeltaY / baseH).coerceIn(0.1f, 10f)
+                                                val targetSy = (abs(dragStartScaleY) * factorY).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleY = targetSy)
+                                                liveTooltipText = "Scale Y: ${(abs(targetSy) * 100).toInt()}%"
                                             }
                                             else -> {
-                                                val scaleStep = (dragAmount.x - dragAmount.y) * 0.008f
-                                                val scaleFactor = (1f + scaleStep).coerceIn(0.85f, 1.15f)
-                                                viewModel.applyCanvasScale(scaleFactor)
-                                                liveTooltipText = "Scale: ${(abs(selectedTransform.scaleX * scaleFactor) * 100).toInt()}%"
+                                                val dragDiag = (totalDeltaX - totalDeltaY) * 0.006f
+                                                val factor = (1f + dragDiag).coerceIn(0.1f, 10f)
+                                                val targetSx = (abs(dragStartScaleX) * factor).coerceIn(0.02f, 15f) * signX
+                                                val targetSy = (abs(dragStartScaleY) * factor).coerceIn(0.02f, 15f) * signY
+                                                viewModel.addOrUpdateKeyframeOnCurrentFrame(scaleX = targetSx, scaleY = targetSy)
+                                                liveTooltipText = "Scale: ${(abs(targetSx) * 100).toInt()}%"
                                             }
                                         }
                                     }
+                                }
 
-                                    // 4. PIVOT TOOL
-                                    activeTool == EditorTool.PIVOT || currentHandle == TransformHandleType.PIVOT_KNOB -> {
-                                        val newPx = (selectedLayer.pivotX + deltaU / (selectedLayer.width * zoom)).coerceIn(0f, 1f)
-                                        val newPy = (selectedLayer.pivotY + deltaV / (selectedLayer.height * zoom)).coerceIn(0f, 1f)
-                                        viewModel.updateLayerPivot(selectedLayer.id, newPx, newPy)
+                                // 4. PIVOT TOOL
+                                EditorTool.PIVOT -> {
+                                    val totalDeltaX = (change.position.x - dragStartTouchPos.x)
+                                    val totalDeltaY = (change.position.y - dragStartTouchPos.y)
+                                    val currentLayer = viewModel.getSelectedLayer()
+                                    if (currentLayer != null) {
+                                        val rotRad = Math.toRadians(dragStartLayerRotation.toDouble())
+                                        val cosA = cos(rotRad).toFloat()
+                                        val sinA = sin(rotRad).toFloat()
+                                        val localDeltaX = totalDeltaX * cosA + totalDeltaY * sinA
+                                        val localDeltaY = -totalDeltaX * sinA + totalDeltaY * cosA
+
+                                        val newPx = (dragStartPivotX + localDeltaX / (currentLayer.width * currentZoom)).coerceIn(0f, 1f)
+                                        val newPy = (dragStartPivotY + localDeltaY / (currentLayer.height * currentZoom)).coerceIn(0f, 1f)
+                                        viewModel.updateLayerPivot(currentLayer.id, newPx, newPy)
                                         liveTooltipText = "Pivot: (${(newPx * 100).toInt()}%, ${(newPy * 100).toInt()}%)"
                                     }
                                 }
+                                else -> {}
                             }
                         }
                     )
@@ -469,16 +495,22 @@ fun CanvasViewport(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(project.layers, currentFrame, zoom, pan, activeTool) {
-                    if (activeTool != EditorTool.HAND_PAN) {
-                        detectTapGestures { tapOffset ->
-                            val stageCenterX = size.width / 2f + pan.x
-                            val stageCenterY = size.height / 2f + pan.y
-                            val sortedLayers = project.layers.filter { it.isVisible && !it.isLocked }.sortedByDescending { it.zIndex }
+                .pointerInput(Unit) {
+                    detectTapGestures { tapOffset ->
+                        val currentProject = viewModel.project.value
+                        val currentF = viewModel.currentFrame.value
+                        val currentZoom = viewModel.viewportZoom.value
+                        val currentPan = viewModel.viewportPan.value
+                        val currentTool = viewModel.activeTool.value
+
+                        if (currentTool != EditorTool.HAND_PAN) {
+                            val stageCenterX = size.width / 2f + currentPan.x
+                            val stageCenterY = size.height / 2f + currentPan.y
+                            val sortedLayers = currentProject.layers.filter { it.isVisible && !it.isLocked }.sortedByDescending { it.zIndex }
 
                             for (layer in sortedLayers) {
-                                val transform = EasingFunctions.evaluateLayerAtFrame(layer, currentFrame)
-                                val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, zoom)
+                                val transform = EasingFunctions.evaluateLayerAtFrame(layer, currentF)
+                                val geo = computeViewportGeometry(layer, transform, stageCenterX, stageCenterY, currentZoom)
                                 val local = geo.worldToLocal(tapOffset)
                                 if (geo.isInsideBody(local)) {
                                     viewModel.selectLayer(layer.id)
