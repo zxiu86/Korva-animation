@@ -84,13 +84,13 @@ jobs:
       - name: Prepare Direct APK Asset
         run: |
           mkdir -p release-assets
-          cp app/build/outputs/apk/debug/app-debug.apk release-assets/Korva-Animation-v1.8.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/Korva-Animation-v1.9.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Korva-Animation-v1.8-APK
-          path: release-assets/Korva-Animation-v1.8.apk
+          name: Korva-Animation-v1.9-APK
+          path: release-assets/Korva-Animation-v1.9.apk
           retention-days: 14
           if-no-files-found: ignore
 
@@ -100,28 +100,30 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            echo "tag=v1.8.0" >> $GITHUB_OUTPUT
+            echo "tag=v1.9.0" >> $GITHUB_OUTPUT
           fi
 
       - name: Publish GitHub Release (Direct APK)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/Korva-Animation-v1.8.apk
-          name: "Korva Animation Studio v1.8"
+          files: release-assets/Korva-Animation-v1.9.apk
+          name: "Korva Animation Studio v1.9"
           tag_name: ${{ steps.release_tag.outputs.tag }}
           generate_release_notes: true
           make_latest: true
           body: |
-            ## Korva Animation Studio v1.8 🎬
+            ## Korva Animation Studio v1.9 🎬
             
             ### 📥 Direct APK Download:
-            Download **Korva-Animation-v1.8.apk** directly below and install on Android (no zip extraction needed!).
+            Download **Korva-Animation-v1.9.apk** directly below and install on Android (no zip extraction needed!).
 
-            ### ✨ What's New in v1.8:
-            - **Minimalist Top Viewport Bar (فقط زر الإعدادات)**: Clean, distraction-free canvas with a single Settings dropdown button in the top right corner.
-            - **Smooth Real-time Gesture Dragging 🎯 (تحريك سلس حسب حركة الإصبع)**: Free continuous floating-point movement following the developer's touch trajectory directly.
-            - **Seamless App Updates (حل مشكلة تعارض التثبيت والتحديث)**: Unified persistent debug keystore signature and updated versionCode to ensure direct upgrade over previous builds.
+            ### ✨ What's New in v1.9 (Timeline Performance & Craft Polish ⏱️):
+            - **Generous Touch Targets & Smooth Scrubber (تحسين سحب ولمس الكي فريمز)**: Greatly enlarged hit detection radius on mobile screens for effortless tapping and dragging of keyframe diamonds.
+            - **Summary Master Track & Aggregate Keyframes (مسار الملخص الرئيسي)**: Instant visual overview of all project keyframes on the top summary row.
+            - **Live Floating Drag Badge & Halo Glow**: Real-time frame number floating tag and glowing feedback when sliding keyframes.
+            - **Playhead Vertical Column Glow**: Visual vertical highlight through the active frame across all layer tracks.
+            - **Timecode Display (دقائق وثواني)**: Exact timecode readout beside current frame count for precise animation timing.
           draft: false
           prerelease: false
         env:

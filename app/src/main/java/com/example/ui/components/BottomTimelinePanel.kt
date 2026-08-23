@@ -200,6 +200,8 @@ private fun BlenderTransportToolbar(
     onSetTotalFrames: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val secondsElapsed = if (project.fps > 0) currentFrame / project.fps.toFloat() else 0f
+    val timecodeStr = String.format(java.util.Locale.US, "%02d:%04.1fs", (secondsElapsed / 60).toInt(), secondsElapsed % 60)
 
     Row(
         modifier = Modifier
@@ -224,22 +226,28 @@ private fun BlenderTransportToolbar(
             )
         }
 
-        // Current Frame Display Box (Blender Style input pill)
+        // Current Frame Display Box (Blender Style input pill with Timecode)
         Surface(
             color = BlenderSurface,
             shape = RoundedCornerShape(3.dp),
             border = BorderStroke(1.dp, BlenderPlayheadBlue.copy(alpha = 0.8f))
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = "${currentFrame.toInt()}",
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "($timecodeStr)",
+                    color = BlenderPlayheadBlue.copy(alpha = 0.9f),
+                    fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -522,12 +530,12 @@ private fun BlenderTimelineTracks(
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
 
-    val rulerHeightDp = 22.dp
-    val trackHeightDp = 24.dp
-    val leftHeaderWidthDp = 90.dp
+    val rulerHeightDp = 24.dp
+    val trackHeightDp = 26.dp
+    val leftHeaderWidthDp = 95.dp
 
     val startPaddingDp = 16.dp
-    val endPaddingDp = 20.dp
+    val endPaddingDp = 24.dp
 
     Row(modifier = Modifier.fillMaxSize()) {
         // LEFT COLUMN: Layer Names List
@@ -547,12 +555,23 @@ private fun BlenderTimelineTracks(
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Text(
-                    text = "Summary",
-                    color = Color.Gray,
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Dns,
+                        contentDescription = "Summary",
+                        tint = BlenderKeyframeGold,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = "Summary",
+                        color = Color.LightGray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             HorizontalDivider(color = BlenderBorder, thickness = 0.8.dp)
@@ -577,19 +596,19 @@ private fun BlenderTimelineTracks(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(5.dp)
+                                    .size(6.dp)
                                     .clip(CircleShape)
                                     .background(shapeColor)
                             )
                             Text(
                                 text = layer.name,
-                                color = if (isSelected) Color.White else Color.LightGray,
-                                fontSize = 8.5.sp,
+                                color = if (isSelected) Color.White else Color(0xFFCCCCCC),
+                                fontSize = 9.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -599,22 +618,22 @@ private fun BlenderTimelineTracks(
                         // Visibility & Lock Icons
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(1.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Icon(
                                 imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = null,
                                 tint = if (layer.isVisible) Color.Gray else Color(0xFFFF5252),
                                 modifier = Modifier
-                                    .size(10.dp)
+                                    .size(12.dp)
                                     .clickable { onToggleVisibility(layer.id) }
                             )
                             Icon(
                                 imageVector = if (layer.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
                                 contentDescription = null,
-                                tint = if (layer.isLocked) BlenderKeyframeGold else Color.Transparent,
+                                tint = if (layer.isLocked) BlenderKeyframeGold else Color(0xFF4A4B54),
                                 modifier = Modifier
-                                    .size(10.dp)
+                                    .size(12.dp)
                                     .clickable { onToggleLock(layer.id) }
                             )
                         }
@@ -649,7 +668,7 @@ private fun BlenderTimelineTracks(
                 canvasWidthDp = maxOf(totalTrackWidthDp, availableWidthDp)
             }
 
-            // Auto scroll playhead when zooming or playing
+            // Auto scroll playhead smoothly when playing
             LaunchedEffect(currentFrame, timelineFitToScreen) {
                 if (!timelineFitToScreen) {
                     val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
@@ -728,13 +747,27 @@ private fun BlenderCanvas(
 
     val textPaint = remember(density) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(220, 220, 230, 245)
+            color = android.graphics.Color.argb(230, 220, 230, 245)
             textSize = with(density) { 9.sp.toPx() }
             isAntiAlias = true
             typeface = android.graphics.Typeface.MONOSPACE
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
+
+    val badgePaint = remember(density) {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.WHITE
+            textSize = with(density) { 8.5.sp.toPx() }
+            isAntiAlias = true
+            isFakeBoldText = true
+            typeface = android.graphics.Typeface.MONOSPACE
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+    }
+
+    // Generous touch hit distance for keyframe manipulation
+    val kfHitRadiusPx = maxOf(frameSpacingPx * 0.7f, with(density) { 16.dp.toPx() })
 
     Canvas(
         modifier = Modifier
@@ -747,7 +780,7 @@ private fun BlenderCanvas(
                     val tapY = tapOffset.y
 
                     if (tapY <= rulerHeightPx) {
-                        // Tapped on Ruler: Scrub playhead directly
+                        // Tapped on Ruler: Scrub playhead directly to integer frame
                         onScrub(xToFrame(tapX).roundToInt().toFloat())
                     } else {
                         // Tapped on Tracks: Check if tapped a keyframe
@@ -758,7 +791,7 @@ private fun BlenderCanvas(
 
                             val clickedKf = layer.keyframes.find { kf ->
                                 val kfX = frameToX(kf.frame.toFloat())
-                                abs(tapX - kfX) <= (frameSpacingPx / 2f).coerceAtLeast(10f)
+                                abs(tapX - kfX) <= kfHitRadiusPx
                             }
 
                             if (clickedKf != null) {
@@ -785,7 +818,7 @@ private fun BlenderCanvas(
                                 val layer = project.layers[trackIndex]
                                 val hitKf = layer.keyframes.find { kf ->
                                     val kfX = frameToX(kf.frame.toFloat())
-                                    abs(startX - kfX) <= (frameSpacingPx / 2f).coerceAtLeast(10f)
+                                    abs(startX - kfX) <= kfHitRadiusPx
                                 }
                                 if (hitKf != null) {
                                     draggingKf = Triple(layer.id, hitKf.frame, startX)
@@ -794,7 +827,7 @@ private fun BlenderCanvas(
                                 }
                             }
                         }
-                        // Default to scrubbing playhead
+                        // Default to smooth scrubbing playhead
                         onScrub(xToFrame(startX))
                     },
                     onDrag = { change, _ ->
@@ -839,9 +872,9 @@ private fun BlenderCanvas(
 
             // Track row background
             val trackColor = if (isLayerSelected) {
-                BlenderSurfaceHighlight.copy(alpha = 0.5f)
+                BlenderSurfaceHighlight.copy(alpha = 0.55f)
             } else if (index % 2 == 0) {
-                BlenderPanelBg.copy(alpha = 0.4f)
+                BlenderPanelBg.copy(alpha = 0.45f)
             } else {
                 BlenderDarkBg
             }
@@ -881,7 +914,34 @@ private fun BlenderCanvas(
             )
         }
 
-        // 3. Draw Keyframes on Tracks (Crisp Blender Gold Diamonds ◆)
+        // 3. Playhead Column Highlight (Glow column under cursor)
+        val playheadX = frameToX(currentFrame)
+        val colWidth = maxOf(frameSpacingPx, 10f)
+        drawRect(
+            color = BlenderPlayheadBlue.copy(alpha = 0.08f),
+            topLeft = Offset(playheadX - colWidth / 2f, rulerHeightPx),
+            size = Size(colWidth, height - rulerHeightPx)
+        )
+
+        // 4. Summary Master Keyframes on Ruler / Header Area
+        val allKeyframeFrames = project.layers.flatMap { it.keyframes.map { kf -> kf.frame } }.toSet()
+        allKeyframeFrames.forEach { kfFrame ->
+            val kfX = frameToX(kfFrame.toFloat())
+            val masterDiamondRadius = 3.5f
+            val summaryPath = Path().apply {
+                moveTo(kfX, rulerHeightPx - 4f - masterDiamondRadius)
+                lineTo(kfX + masterDiamondRadius, rulerHeightPx - 4f)
+                lineTo(kfX, rulerHeightPx - 4f + masterDiamondRadius)
+                lineTo(kfX - masterDiamondRadius, rulerHeightPx - 4f)
+                close()
+            }
+            drawPath(
+                path = summaryPath,
+                color = BlenderKeyframeGold.copy(alpha = 0.65f)
+            )
+        }
+
+        // 5. Draw Keyframes on Tracks (Crisp Blender Gold Diamonds ◆ with Span Connectors)
         project.layers.forEachIndexed { index, layer ->
             val trackCenterY = rulerHeightPx + index * trackHeightPx + trackHeightPx / 2f
             val isLayerSelected = layer.id == selectedLayerId
@@ -891,8 +951,17 @@ private fun BlenderCanvas(
             if (sortedKfs.size >= 2) {
                 val firstX = frameToX(sortedKfs.first().frame.toFloat())
                 val lastX = frameToX(sortedKfs.last().frame.toFloat())
+                
+                // Outer glow span
                 drawLine(
-                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.5f else 0.25f),
+                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.35f else 0.18f),
+                    start = Offset(firstX, trackCenterY),
+                    end = Offset(lastX, trackCenterY),
+                    strokeWidth = 4f
+                )
+                // Core span line
+                drawLine(
+                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.75f else 0.45f),
                     start = Offset(firstX, trackCenterY),
                     end = Offset(lastX, trackCenterY),
                     strokeWidth = 2f
@@ -905,7 +974,17 @@ private fun BlenderCanvas(
                 val kfX = if (isBeingDragged) draggingKf!!.third else frameToX(kf.frame.toFloat())
                 val isKfSelected = selectedKeyframe?.first == layer.id && selectedKeyframe?.second == kf.frame
 
-                val diamondRadius = if (isKfSelected) 5.5f else 4f
+                val diamondRadius = if (isBeingDragged) 6.5f else if (isKfSelected) 5.5f else 4.2f
+
+                // Halo glow when selected or dragging
+                if (isKfSelected || isBeingDragged) {
+                    drawCircle(
+                        color = BlenderPlayheadBlue.copy(alpha = 0.35f),
+                        radius = diamondRadius + 4f,
+                        center = Offset(kfX, trackCenterY)
+                    )
+                }
+
                 val diamondPath = Path().apply {
                     moveTo(kfX, trackCenterY - diamondRadius)
                     lineTo(kfX + diamondRadius, trackCenterY)
@@ -917,19 +996,30 @@ private fun BlenderCanvas(
                 // Fill Diamond
                 drawPath(
                     path = diamondPath,
-                    color = if (isKfSelected) BlenderKeyframeSelected else BlenderKeyframeGold
+                    color = if (isBeingDragged) Color(0xFFFFD700) else if (isKfSelected) BlenderKeyframeSelected else BlenderKeyframeGold
                 )
 
                 // Diamond Border
                 drawPath(
                     path = diamondPath,
-                    color = if (isKfSelected) BlenderPlayheadBlue else Color(0xFF6B4500),
-                    style = Stroke(width = 1.2f)
+                    color = if (isBeingDragged) Color.White else if (isKfSelected) BlenderPlayheadBlue else Color(0xFF5A3A00),
+                    style = Stroke(width = 1.3f)
                 )
+
+                // Floating frame number tag when dragging
+                if (isBeingDragged) {
+                    val draggedFrameNumber = xToFrame(kfX).roundToInt()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        draggedFrameNumber.toString(),
+                        kfX,
+                        trackCenterY - diamondRadius - 6f,
+                        badgePaint
+                    )
+                }
             }
         }
 
-        // 4. Ruler Header Area (Blender Timeline Ruler)
+        // 6. Ruler Header Area (Blender Timeline Ruler)
         drawRect(
             color = BlenderPanelBg,
             topLeft = Offset(0f, 0f),
@@ -972,24 +1062,22 @@ private fun BlenderCanvas(
             }
         }
 
-        // 5. Blender Signature Playhead Cursor (Blue Vertical Line with Triangular Cap)
-        val playheadX = frameToX(currentFrame)
-
+        // 7. Blender Signature Playhead Cursor (Blue Vertical Line with Triangular Cap)
         // Playhead Vertical Line through entire canvas
         drawLine(
             color = BlenderPlayheadBlue,
             start = Offset(playheadX, rulerHeightPx),
             end = Offset(playheadX, height),
-            strokeWidth = 1.8f
+            strokeWidth = 2f
         )
 
-        // Playhead Head on the Ruler
+        // Playhead Head on the Ruler with shadow
         val headPath = Path().apply {
-            moveTo(playheadX - 5.5f, 0f)
-            lineTo(playheadX + 5.5f, 0f)
-            lineTo(playheadX + 5.5f, rulerHeightPx - 5f)
+            moveTo(playheadX - 6.5f, 0f)
+            lineTo(playheadX + 6.5f, 0f)
+            lineTo(playheadX + 6.5f, rulerHeightPx - 6f)
             lineTo(playheadX, rulerHeightPx)
-            lineTo(playheadX - 5.5f, rulerHeightPx - 5f)
+            lineTo(playheadX - 6.5f, rulerHeightPx - 6f)
             close()
         }
 
