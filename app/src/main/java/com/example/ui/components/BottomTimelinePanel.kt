@@ -7,8 +7,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -37,21 +39,22 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.*
-import com.example.ui.theme.*
 import com.example.viewmodel.KorvaViewModel
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-// Blender-inspired signature colors
-private val BlenderDarkBg = Color(0xFF1B1C1E)
-private val BlenderPanelBg = Color(0xFF232428)
-private val BlenderSurface = Color(0xFF2D2E34)
-private val BlenderSurfaceHighlight = Color(0xFF3B3C44)
-private val BlenderBorder = Color(0xFF383942)
-private val BlenderPlayheadBlue = Color(0xFF478CFF)
-private val BlenderKeyframeGold = Color(0xFFFFB84D)
+// Blender-inspired signature dark studio colors
+private val BlenderDarkBg = Color(0xFF161719)
+private val BlenderPanelBg = Color(0xFF202125)
+private val BlenderSurface = Color(0xFF2B2C32)
+private val BlenderSurfaceHighlight = Color(0xFF383A43)
+private val BlenderBorder = Color(0xFF35373F)
+private val BlenderPlayheadBlue = Color(0xFF3B82F6)
+private val BlenderPlayheadBeam = Color(0xFF60A5FA)
+private val BlenderKeyframeGold = Color(0xFFFBBF24)
 private val BlenderKeyframeSelected = Color(0xFFFFFFFF)
-private val BlenderPlayheadHead = Color(0xFF5CA0FF)
+private val BlenderPlayheadHead = Color(0xFF60A5FA)
 
 @Composable
 fun BottomTimelinePanel(
@@ -72,6 +75,7 @@ fun BottomTimelinePanel(
     val currentKfExists = selectedLayer?.keyframes?.any { it.frame == currentFrame.toInt() } == true
 
     val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
 
     val panelHeight by animateDpAsState(
         targetValue = if (isCollapsed) 36.dp else timelineHeightDp.coerceAtLeast(140f).dp,
@@ -91,7 +95,7 @@ fun BottomTimelinePanel(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // 1. Sleek Drag Handle to adjust height
+                // 1. Drag Handle to adjust timeline height
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -116,7 +120,7 @@ fun BottomTimelinePanel(
                     )
                 }
 
-                // 2. Blender-Style Transport Toolbar
+                // 2. Transport Controls & Options Toolbar
                 BlenderTransportToolbar(
                     project = project,
                     currentFrame = currentFrame,
@@ -124,6 +128,7 @@ fun BottomTimelinePanel(
                     isCollapsed = isCollapsed,
                     currentKfExists = currentKfExists,
                     timelineFitToScreen = timelineFitToScreen,
+                    timelineZoom = timelineZoom,
                     onToggleCollapse = { viewModel.toggleBottomTimeline() },
                     onTogglePlay = { viewModel.togglePlay() },
                     onJumpStart = { viewModel.jumpToStart() },
@@ -149,11 +154,12 @@ fun BottomTimelinePanel(
                     onSetTotalFrames = { viewModel.setTotalFrames(it) }
                 )
 
-                // 3. Blender-Style Timeline Dopesheet (Ruler + Multi-Track Canvas)
+                // 3. Multi-Track Timeline Canvas with Smooth Scrolling & Free Playhead
                 if (!isCollapsed) {
                     BlenderTimelineTracks(
                         project = project,
                         currentFrame = currentFrame,
+                        isPlaying = isPlaying,
                         selectedLayerId = selectedLayerId,
                         selectedKeyframe = selectedKeyframe,
                         timelineZoom = timelineZoom,
@@ -182,6 +188,7 @@ private fun BlenderTransportToolbar(
     isCollapsed: Boolean,
     currentKfExists: Boolean,
     timelineFitToScreen: Boolean,
+    timelineZoom: Float,
     onToggleCollapse: () -> Unit,
     onTogglePlay: () -> Unit,
     onJumpStart: () -> Unit,
@@ -206,7 +213,7 @@ private fun BlenderTransportToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(31.dp)
+            .height(32.dp)
             .background(BlenderPanelBg)
             .horizontalScroll(scrollState)
             .padding(horizontal = 4.dp),
@@ -226,7 +233,7 @@ private fun BlenderTransportToolbar(
             )
         }
 
-        // Current Frame Display Box (Blender Style input pill with Timecode)
+        // Current Frame Display Box
         Surface(
             color = BlenderSurface,
             shape = RoundedCornerShape(3.dp),
@@ -272,7 +279,7 @@ private fun BlenderTransportToolbar(
 
         VerticalDivider(color = BlenderBorder, modifier = Modifier.height(14.dp))
 
-        // Transport Controls (Blender Layout: |<  <  Play/Pause  >  >|)
+        // Transport Controls (|<  ⏮  <  PLAY/PAUSE  >  ⏭  >|)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(1.dp)
@@ -294,15 +301,15 @@ private fun BlenderTransportToolbar(
 
             // Main Play / Pause Button
             Surface(
-                color = if (isPlaying) Color(0xFFE05252) else BlenderPlayheadBlue,
+                color = if (isPlaying) Color(0xFFDC2626) else BlenderPlayheadBlue,
                 shape = RoundedCornerShape(4.dp),
-                border = BorderStroke(1.dp, if (isPlaying) Color(0xFFFF7878) else Color(0xFF70A8FF)),
+                border = BorderStroke(1.dp, if (isPlaying) Color(0xFFEF4444) else Color(0xFF60A5FA)),
                 modifier = Modifier
                     .clickable { onTogglePlay() }
                     .testTag("timeline_play_pause_button")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
@@ -391,15 +398,16 @@ private fun BlenderTransportToolbar(
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             // FIT Button
+            val isFitActive = timelineFitToScreen && project.totalFrames <= 30
             Surface(
-                color = if (timelineFitToScreen) BlenderPlayheadBlue.copy(alpha = 0.25f) else BlenderSurface,
+                color = if (isFitActive) BlenderPlayheadBlue.copy(alpha = 0.25f) else BlenderSurface,
                 shape = RoundedCornerShape(3.dp),
-                border = BorderStroke(0.5.dp, if (timelineFitToScreen) BlenderPlayheadBlue else BlenderBorder),
+                border = BorderStroke(0.5.dp, if (isFitActive) BlenderPlayheadBlue else BlenderBorder),
                 modifier = Modifier.clickable { onToggleFit() }
             ) {
                 Text(
-                    text = "FIT",
-                    color = if (timelineFitToScreen) BlenderPlayheadBlue else Color.Gray,
+                    text = if (project.totalFrames > 30) "SCROLL" else "FIT",
+                    color = if (isFitActive) BlenderPlayheadBlue else Color(0xFF38BDF8),
                     fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.5.dp)
@@ -408,10 +416,10 @@ private fun BlenderTransportToolbar(
 
             // Zoom In / Out
             IconButton(onClick = onZoomOut, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = Color.Gray, modifier = Modifier.size(12.dp))
+                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = Color.LightGray, modifier = Modifier.size(13.dp))
             }
             IconButton(onClick = onZoomIn, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = Color.Gray, modifier = Modifier.size(12.dp))
+                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = Color.LightGray, modifier = Modifier.size(13.dp))
             }
         }
 
@@ -459,7 +467,7 @@ private fun BlenderTransportToolbar(
                     onDismissRequest = { showFps = false },
                     modifier = Modifier.background(BlenderDarkBg)
                 ) {
-                    listOf(12, 24, 30, 60).forEach { fps ->
+                    listOf(12, 24, 30, 48, 60).forEach { fps ->
                         DropdownMenuItem(
                             text = { Text("$fps FPS", color = Color.White, fontSize = 10.sp) },
                             onClick = {
@@ -516,6 +524,7 @@ private fun BlenderTransportToolbar(
 private fun BlenderTimelineTracks(
     project: KorProject,
     currentFrame: Float,
+    isPlaying: Boolean,
     selectedLayerId: String?,
     selectedKeyframe: Pair<String, Int>?,
     timelineZoom: Float,
@@ -529,13 +538,14 @@ private fun BlenderTimelineTracks(
 ) {
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
 
     val rulerHeightDp = 24.dp
     val trackHeightDp = 26.dp
     val leftHeaderWidthDp = 95.dp
 
-    val startPaddingDp = 16.dp
-    val endPaddingDp = 24.dp
+    val startPaddingDp = 20.dp
+    val endPaddingDp = 36.dp
 
     Row(modifier = Modifier.fillMaxSize()) {
         // LEFT COLUMN: Layer Names List
@@ -644,60 +654,151 @@ private fun BlenderTimelineTracks(
             }
         }
 
-        // RIGHT COLUMN: Ruler + Timeline Tracks Canvas
+        // RIGHT COLUMN: Scrollable Timeline Tracks Canvas & Horizontal Navigation
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .horizontalScroll(scrollState)
                 .background(BlenderDarkBg)
         ) {
             val totalFrames = project.totalFrames
             val availableWidthDp = maxWidth
 
+            // Calculate spacing: If totalFrames > 30, ALWAYS provide wide spacing so scrolling works smoothly!
+            val isFitMode = timelineFitToScreen && totalFrames <= 30
             val frameSpacingDp: Dp
             val canvasWidthDp: Dp
 
-            if (timelineFitToScreen) {
+            if (isFitMode) {
                 val usableWidthDp = (availableWidthDp - startPaddingDp - endPaddingDp).coerceAtLeast(60.dp)
-                frameSpacingDp = (usableWidthDp / (totalFrames - 1).coerceAtLeast(1)).coerceIn(3.dp, 60.dp)
+                frameSpacingDp = (usableWidthDp / (totalFrames - 1).coerceAtLeast(1)).coerceIn(8.dp, 60.dp)
                 canvasWidthDp = availableWidthDp
             } else {
-                frameSpacingDp = (18f * timelineZoom).coerceIn(6f, 60f).dp
-                val totalTrackWidthDp = startPaddingDp + (frameSpacingDp * (totalFrames - 1).coerceAtLeast(1)) + endPaddingDp
+                // When frames > 30 or user zoomed/unfitted, ensure at least 22dp per frame
+                frameSpacingDp = (24f * timelineZoom).coerceIn(12f, 90f).dp
+                val totalTrackWidthDp = startPaddingDp + (frameSpacingDp * (totalFrames - 1).coerceAtLeast(1)) + endPaddingDp + 60.dp
                 canvasWidthDp = maxOf(totalTrackWidthDp, availableWidthDp)
             }
 
-            // Auto scroll playhead smoothly when playing
-            LaunchedEffect(currentFrame, timelineFitToScreen) {
-                if (!timelineFitToScreen) {
+            // Smooth playhead auto-tracking during playback only (does not fight user manual scrolling!)
+            LaunchedEffect(isPlaying, currentFrame) {
+                if (isPlaying && !isFitMode && !scrollState.isScrollInProgress) {
                     val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
                     val startPaddingPx = with(density) { startPaddingDp.toPx() }
                     val playheadPx = startPaddingPx + currentFrame * frameSpacingPx
                     val viewportWidthPx = with(density) { availableWidthDp.toPx() }
 
-                    val targetScroll = (playheadPx - viewportWidthPx / 2f).toInt()
-                    if (targetScroll in 0..scrollState.maxValue) {
+                    // Only adjust scroll if needle moves out of the middle 60% of viewport
+                    val currentScroll = scrollState.value
+                    val relativeX = playheadPx - currentScroll
+                    if (relativeX < viewportWidthPx * 0.15f || relativeX > viewportWidthPx * 0.85f) {
+                        val targetScroll = (playheadPx - viewportWidthPx / 2f).toInt().coerceIn(0, scrollState.maxValue)
                         scrollState.scrollTo(targetScroll)
                     }
                 }
             }
 
-            BlenderCanvas(
-                project = project,
-                currentFrame = currentFrame,
-                selectedLayerId = selectedLayerId,
-                selectedKeyframe = selectedKeyframe,
-                canvasWidthDp = canvasWidthDp,
-                startPaddingDp = startPaddingDp,
-                frameSpacingDp = frameSpacingDp,
-                trackHeightDp = trackHeightDp,
-                rulerHeightDp = rulerHeightDp,
-                onScrub = onScrub,
-                onSelectLayer = onSelectLayer,
-                onSelectKeyframe = onSelectKeyframe,
-                onMoveKeyframe = onMoveKeyframe
-            )
+            // Scrollable Timeline Canvas container
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(scrollState)
+            ) {
+                BlenderCanvas(
+                    project = project,
+                    currentFrame = currentFrame,
+                    selectedLayerId = selectedLayerId,
+                    selectedKeyframe = selectedKeyframe,
+                    canvasWidthDp = canvasWidthDp,
+                    startPaddingDp = startPaddingDp,
+                    frameSpacingDp = frameSpacingDp,
+                    trackHeightDp = trackHeightDp,
+                    rulerHeightDp = rulerHeightDp,
+                    onScrub = onScrub,
+                    onSelectLayer = onSelectLayer,
+                    onSelectKeyframe = onSelectKeyframe,
+                    onMoveKeyframe = onMoveKeyframe,
+                    onAutoScrollBy = { deltaPx ->
+                        coroutineScope.launch {
+                            scrollState.scrollBy(deltaPx)
+                        }
+                    }
+                )
+            }
+
+            // Floating Navigation Overlay for Horizontal Scrolling (> 30 frames)
+            if (scrollState.maxValue > 0) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Center playhead in view button
+                    Surface(
+                        color = BlenderSurface.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.5.dp, BlenderPlayheadBlue.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .clickable {
+                                coroutineScope.launch {
+                                    val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
+                                    val startPaddingPx = with(density) { startPaddingDp.toPx() }
+                                    val playheadPx = startPaddingPx + currentFrame * frameSpacingPx
+                                    val viewportWidthPx = with(density) { availableWidthDp.toPx() }
+                                    val targetScroll = (playheadPx - viewportWidthPx / 2f).toInt().coerceIn(0, scrollState.maxValue)
+                                    scrollState.animateScrollTo(targetScroll)
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(Icons.Default.FilterCenterFocus, contentDescription = "Focus", tint = BlenderPlayheadBlue, modifier = Modifier.size(11.dp))
+                            Text("Focus", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Left Scroll Button
+                    Surface(
+                        color = BlenderSurface.copy(alpha = 0.85f),
+                        shape = CircleShape,
+                        border = BorderStroke(0.5.dp, BlenderBorder),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clickable {
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(-240f)
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Scroll Left", tint = Color.White, modifier = Modifier.size(14.dp))
+                        }
+                    }
+
+                    // Right Scroll Button
+                    Surface(
+                        color = BlenderSurface.copy(alpha = 0.85f),
+                        shape = CircleShape,
+                        border = BorderStroke(0.5.dp, BlenderBorder),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clickable {
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(240f)
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Scroll Right", tint = Color.White, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -719,7 +820,8 @@ private fun BlenderCanvas(
     onScrub: (Float) -> Unit,
     onSelectLayer: (String) -> Unit,
     onSelectKeyframe: (String, Int) -> Unit,
-    onMoveKeyframe: (String, Int, Int) -> Unit
+    onMoveKeyframe: (String, Int, Int) -> Unit,
+    onAutoScrollBy: (Float) -> Unit
 ) {
     val totalFrames = project.totalFrames
     val density = LocalDensity.current
@@ -730,6 +832,7 @@ private fun BlenderCanvas(
     val frameSpacingPx = with(density) { frameSpacingDp.toPx() }
 
     var draggingKf by remember { mutableStateOf<Triple<String, Int, Float>?>(null) } // layerId, origFrame, currentDragX
+    var isDraggingPlayhead by remember { mutableStateOf(false) }
 
     fun frameToX(f: Float): Float = startPaddingPx + f * frameSpacingPx
     fun xToFrame(x: Float): Float {
@@ -737,7 +840,7 @@ private fun BlenderCanvas(
         return rawF.coerceIn(0f, (totalFrames - 1).toFloat())
     }
 
-    // Pre-calculate step interval for ruler numbers
+    // Step interval for ruler frame numbers
     val step = when {
         frameSpacingPx > 35f -> 1
         frameSpacingPx > 18f -> 5
@@ -747,7 +850,7 @@ private fun BlenderCanvas(
 
     val textPaint = remember(density) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(230, 220, 230, 245)
+            color = android.graphics.Color.argb(220, 210, 220, 235)
             textSize = with(density) { 9.sp.toPx() }
             isAntiAlias = true
             typeface = android.graphics.Typeface.MONOSPACE
@@ -766,21 +869,19 @@ private fun BlenderCanvas(
         }
     }
 
-    // Generous touch hit distance for keyframe manipulation
     val kfHitRadiusPx = maxOf(frameSpacingPx * 0.7f, with(density) { 16.dp.toPx() })
 
     Canvas(
         modifier = Modifier
             .width(canvasWidthDp)
             .fillMaxHeight()
-            // Scrubbing & Keyframe Tap / Drag gestures
             .pointerInput(totalFrames, frameSpacingPx, startPaddingPx, project.layers) {
                 detectTapGestures { tapOffset ->
                     val tapX = tapOffset.x
                     val tapY = tapOffset.y
 
                     if (tapY <= rulerHeightPx) {
-                        // Tapped on Ruler: Scrub playhead directly to integer frame
+                        // Tapped on Ruler: Scrub playhead directly to frame
                         onScrub(xToFrame(tapX).roundToInt().toFloat())
                     } else {
                         // Tapped on Tracks: Check if tapped a keyframe
@@ -828,9 +929,10 @@ private fun BlenderCanvas(
                             }
                         }
                         // Default to smooth scrubbing playhead
+                        isDraggingPlayhead = true
                         onScrub(xToFrame(startX))
                     },
-                    onDrag = { change, _ ->
+                    onDrag = { change, dragAmount ->
                         change.consume()
                         val currentX = change.position.x
                         val activeKf = draggingKf
@@ -851,9 +953,11 @@ private fun BlenderCanvas(
                             }
                             draggingKf = null
                         }
+                        isDraggingPlayhead = false
                     },
                     onDragCancel = {
                         draggingKf = null
+                        isDraggingPlayhead = false
                     }
                 )
             }
@@ -870,7 +974,6 @@ private fun BlenderCanvas(
             val layer = project.layers.getOrNull(index)
             val isLayerSelected = layer != null && layer.id == selectedLayerId
 
-            // Track row background
             val trackColor = if (isLayerSelected) {
                 BlenderSurfaceHighlight.copy(alpha = 0.55f)
             } else if (index % 2 == 0) {
@@ -885,7 +988,7 @@ private fun BlenderCanvas(
                 size = Size(width, trackHeightPx)
             )
 
-            // Track dividing horizontal line
+            // Track dividing line
             drawLine(
                 color = BlenderBorder.copy(alpha = 0.35f),
                 start = Offset(0f, trackTop + trackHeightPx),
@@ -894,7 +997,7 @@ private fun BlenderCanvas(
             )
         }
 
-        // 2. Vertical Frame Grid Lines (Subtle Blender tick lines)
+        // 2. Vertical Frame Grid Lines
         for (f in 0 until totalFrames) {
             val lineX = frameToX(f.toFloat())
             val isMajor = f % 5 == 0
@@ -905,7 +1008,6 @@ private fun BlenderCanvas(
                 BlenderBorder.copy(alpha = 0.12f)
             }
 
-            // Line down entire track
             drawLine(
                 color = gridColor,
                 start = Offset(lineX, rulerHeightPx),
@@ -914,16 +1016,18 @@ private fun BlenderCanvas(
             )
         }
 
-        // 3. Playhead Column Highlight (Glow column under cursor)
+        // 3. Playhead Luminous Column (Glow column under cursor)
         val playheadX = frameToX(currentFrame)
-        val colWidth = maxOf(frameSpacingPx, 10f)
+        val colWidth = maxOf(frameSpacingPx, 12f)
+
+        // Soft ambient blue glow on active column
         drawRect(
-            color = BlenderPlayheadBlue.copy(alpha = 0.08f),
+            color = BlenderPlayheadBlue.copy(alpha = 0.10f),
             topLeft = Offset(playheadX - colWidth / 2f, rulerHeightPx),
             size = Size(colWidth, height - rulerHeightPx)
         )
 
-        // 4. Summary Master Keyframes on Ruler / Header Area
+        // 4. Summary Master Keyframes on Header Area
         val allKeyframeFrames = project.layers.flatMap { it.keyframes.map { kf -> kf.frame } }.toSet()
         allKeyframeFrames.forEach { kfFrame ->
             val kfX = frameToX(kfFrame.toFloat())
@@ -937,31 +1041,29 @@ private fun BlenderCanvas(
             }
             drawPath(
                 path = summaryPath,
-                color = BlenderKeyframeGold.copy(alpha = 0.65f)
+                color = BlenderKeyframeGold.copy(alpha = 0.70f)
             )
         }
 
-        // 5. Draw Keyframes on Tracks (Crisp Blender Gold Diamonds ◆ with Span Connectors)
+        // 5. Draw Keyframes on Tracks (Blender Gold Diamonds ◆ with Span Connectors)
         project.layers.forEachIndexed { index, layer ->
             val trackCenterY = rulerHeightPx + index * trackHeightPx + trackHeightPx / 2f
             val isLayerSelected = layer.id == selectedLayerId
 
-            // Draw span connection line between keyframes
+            // Span connector line between keyframes
             val sortedKfs = layer.keyframes.sortedBy { it.frame }
             if (sortedKfs.size >= 2) {
                 val firstX = frameToX(sortedKfs.first().frame.toFloat())
                 val lastX = frameToX(sortedKfs.last().frame.toFloat())
-                
-                // Outer glow span
+
                 drawLine(
                     color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.35f else 0.18f),
                     start = Offset(firstX, trackCenterY),
                     end = Offset(lastX, trackCenterY),
                     strokeWidth = 4f
                 )
-                // Core span line
                 drawLine(
-                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.75f else 0.45f),
+                    color = BlenderKeyframeGold.copy(alpha = if (isLayerSelected) 0.85f else 0.45f),
                     start = Offset(firstX, trackCenterY),
                     end = Offset(lastX, trackCenterY),
                     strokeWidth = 2f
@@ -976,7 +1078,6 @@ private fun BlenderCanvas(
 
                 val diamondRadius = if (isBeingDragged) 6.5f else if (isKfSelected) 5.5f else 4.2f
 
-                // Halo glow when selected or dragging
                 if (isKfSelected || isBeingDragged) {
                     drawCircle(
                         color = BlenderPlayheadBlue.copy(alpha = 0.35f),
@@ -993,20 +1094,17 @@ private fun BlenderCanvas(
                     close()
                 }
 
-                // Fill Diamond
                 drawPath(
                     path = diamondPath,
                     color = if (isBeingDragged) Color(0xFFFFD700) else if (isKfSelected) BlenderKeyframeSelected else BlenderKeyframeGold
                 )
 
-                // Diamond Border
                 drawPath(
                     path = diamondPath,
                     color = if (isBeingDragged) Color.White else if (isKfSelected) BlenderPlayheadBlue else Color(0xFF5A3A00),
                     style = Stroke(width = 1.3f)
                 )
 
-                // Floating frame number tag when dragging
                 if (isBeingDragged) {
                     val draggedFrameNumber = xToFrame(kfX).roundToInt()
                     drawContext.canvas.nativeCanvas.drawText(
@@ -1019,7 +1117,7 @@ private fun BlenderCanvas(
             }
         }
 
-        // 6. Ruler Header Area (Blender Timeline Ruler)
+        // 6. Ruler Header Area
         drawRect(
             color = BlenderPanelBg,
             topLeft = Offset(0f, 0f),
@@ -1062,8 +1160,14 @@ private fun BlenderCanvas(
             }
         }
 
-        // 7. Blender Signature Playhead Cursor (Blue Vertical Line with Triangular Cap)
-        // Playhead Vertical Line through entire canvas
+        // 7. Signature Blender Playhead Needle & Luminous Column
+        // Vertical Needle Line through entire timeline
+        drawLine(
+            color = BlenderPlayheadBeam.copy(alpha = 0.35f),
+            start = Offset(playheadX, rulerHeightPx),
+            end = Offset(playheadX, height),
+            strokeWidth = 4f
+        )
         drawLine(
             color = BlenderPlayheadBlue,
             start = Offset(playheadX, rulerHeightPx),
@@ -1071,13 +1175,13 @@ private fun BlenderCanvas(
             strokeWidth = 2f
         )
 
-        // Playhead Head on the Ruler with shadow
+        // Playhead Cap on the Ruler
         val headPath = Path().apply {
-            moveTo(playheadX - 6.5f, 0f)
-            lineTo(playheadX + 6.5f, 0f)
-            lineTo(playheadX + 6.5f, rulerHeightPx - 6f)
+            moveTo(playheadX - 7f, 0f)
+            lineTo(playheadX + 7f, 0f)
+            lineTo(playheadX + 7f, rulerHeightPx - 6f)
             lineTo(playheadX, rulerHeightPx)
-            lineTo(playheadX - 6.5f, rulerHeightPx - 6f)
+            lineTo(playheadX - 7f, rulerHeightPx - 6f)
             close()
         }
 
@@ -1090,6 +1194,14 @@ private fun BlenderCanvas(
             path = headPath,
             color = Color.White,
             style = Stroke(width = 1f)
+        )
+
+        // Floating Frame Number on Playhead Head when dragging or active
+        drawContext.canvas.nativeCanvas.drawText(
+            currentFrame.toInt().toString(),
+            playheadX,
+            rulerHeightPx - 7f,
+            badgePaint
         )
     }
 }

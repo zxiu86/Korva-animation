@@ -212,6 +212,11 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun play() {
+        val total = _project.value.totalFrames.toFloat()
+        if (_currentFrame.value >= total - 1f) {
+            _currentFrame.value = 0f
+            pingPongForward = true
+        }
         _isPlaying.value = true
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch(Dispatchers.Default) {
@@ -223,25 +228,29 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
                 val deltaSeconds = (now - lastNanoTime) / 1_000_000_000f
                 lastNanoTime = now
 
+                if (kotlin.math.abs(_currentFrame.value - currentPos) > 1.0f) {
+                    currentPos = _currentFrame.value
+                }
+
                 val proj = _project.value
-                val baseFps = proj.fps.toFloat()
+                val baseFps = proj.fps.toFloat().coerceAtLeast(1f)
                 val speed = proj.speedMultiplier.coerceIn(0.1f, 5.0f)
                 val effectiveFps = baseFps * speed
 
                 val frameDelta = deltaSeconds * effectiveFps
-                val total = proj.totalFrames.toFloat()
+                val totalFloat = proj.totalFrames.toFloat().coerceAtLeast(1f)
 
                 when (proj.loopMode) {
                     LoopMode.REPEAT -> {
                         currentPos += frameDelta
-                        if (currentPos >= total) {
-                            currentPos %= total
+                        if (currentPos >= totalFloat) {
+                            currentPos %= totalFloat
                         }
                     }
                     LoopMode.ONCE -> {
                         currentPos += frameDelta
-                        if (currentPos >= total - 1f) {
-                            currentPos = total - 1f
+                        if (currentPos >= totalFloat - 1f) {
+                            currentPos = totalFloat - 1f
                             _currentFrame.value = currentPos
                             _isPlaying.value = false
                             break
@@ -250,8 +259,8 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
                     LoopMode.PING_PONG -> {
                         if (pingPongForward) {
                             currentPos += frameDelta
-                            if (currentPos >= total - 1f) {
-                                currentPos = total - 1f
+                            if (currentPos >= totalFloat - 1f) {
+                                currentPos = totalFloat - 1f
                                 pingPongForward = false
                             }
                         } else {
@@ -263,7 +272,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                _currentFrame.value = currentPos
+                _currentFrame.value = currentPos.coerceIn(0f, (totalFloat - 1f).coerceAtLeast(0f))
 
                 // Smooth delay targeting ~60-120fps refresh rate
                 delay(12L)
@@ -283,28 +292,27 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun scrubToFrame(frame: Float) {
         val total = _project.value.totalFrames.toFloat()
-        _currentFrame.value = frame.coerceIn(0f, total - 1f)
+        _currentFrame.value = frame.coerceIn(0f, (total - 1f).coerceAtLeast(0f))
     }
 
     fun stepForward() {
-        pause()
         val total = _project.value.totalFrames
-        _currentFrame.value = (_currentFrame.value + 1f).coerceAtMost((total - 1).toFloat())
+        val next = kotlin.math.floor(_currentFrame.value) + 1f
+        _currentFrame.value = if (next >= total) 0f else next
     }
 
     fun stepBackward() {
-        pause()
-        _currentFrame.value = (_currentFrame.value - 1f).coerceAtLeast(0f)
+        val total = _project.value.totalFrames
+        val prev = kotlin.math.ceil(_currentFrame.value) - 1f
+        _currentFrame.value = if (prev < 0f) (total - 1).toFloat() else prev
     }
 
     fun jumpToStart() {
-        pause()
         _currentFrame.value = 0f
     }
 
     fun jumpToEnd() {
-        pause()
-        _currentFrame.value = (_project.value.totalFrames - 1).toFloat()
+        _currentFrame.value = (_project.value.totalFrames - 1).coerceAtLeast(0).toFloat()
     }
 
     fun setFps(fps: Int) {
@@ -340,6 +348,9 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         _project.update { it.copy(totalFrames = validFrames) }
         if (_currentFrame.value >= validFrames) {
             _currentFrame.value = (validFrames - 1).toFloat()
+        }
+        if (validFrames > 30) {
+            _timelineFitToScreen.value = false
         }
         postStatus("Total frames: $validFrames")
     }
