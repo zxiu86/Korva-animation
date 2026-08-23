@@ -84,13 +84,13 @@ jobs:
       - name: Prepare Direct APK Asset
         run: |
           mkdir -p release-assets
-          cp app/build/outputs/apk/debug/app-debug.apk release-assets/Korva-Animation-v1.7.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/Korva-Animation-v1.8.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Korva-Animation-v1.7-APK
-          path: release-assets/Korva-Animation-v1.7.apk
+          name: Korva-Animation-v1.8-APK
+          path: release-assets/Korva-Animation-v1.8.apk
           retention-days: 14
           if-no-files-found: ignore
 
@@ -100,29 +100,28 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            echo "tag=v1.7.0" >> $GITHUB_OUTPUT
+            echo "tag=v1.8.0" >> $GITHUB_OUTPUT
           fi
 
       - name: Publish GitHub Release (Direct APK)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/Korva-Animation-v1.7.apk
-          name: "Korva Animation Studio v1.7"
+          files: release-assets/Korva-Animation-v1.8.apk
+          name: "Korva Animation Studio v1.8"
           tag_name: ${{ steps.release_tag.outputs.tag }}
           generate_release_notes: true
           make_latest: true
           body: |
-            ## Korva Animation Studio v1.7 🎬
+            ## Korva Animation Studio v1.8 🎬
             
             ### 📥 Direct APK Download:
-            Download **Korva-Animation-v1.7.apk** directly below and install on Android (no zip extraction needed!).
+            Download **Korva-Animation-v1.8.apk** directly below and install on Android (no zip extraction needed!).
 
-            ### ✨ What's New in v1.7:
-            - **Viewport Guides & Overlays Popup Menu 📋 (قائمة إعدادات منفذ العرض المنبثقة)**: Consolidated all canvas guides (Onion Skinning, Motion Path, Grid, Snap, Safe Zones, Rule of Thirds, Canvas Background) into a clean, modern dropdown menu with active count badge.
-            - **Uncluttered Top HUD**: Created a spacious, streamlined top bar with quick access to frame counter, overlays menu, quick direction flips (↔ ↕), and zoom controls.
-            - **Fixed Pure Axial Rotation & Flip Presets**: Pure local rotation and one-tap horizontal/vertical flipping.
-            - **Automated GitHub Release Direct APK**: Build artifacts package direct APK installations directly to GitHub Releases.
+            ### ✨ What's New in v1.8:
+            - **Minimalist Top Viewport Bar (فقط زر الإعدادات)**: Clean, distraction-free canvas with a single Settings dropdown button in the top right corner.
+            - **Smooth Real-time Gesture Dragging 🎯 (تحريك سلس حسب حركة الإصبع)**: Free continuous floating-point movement following the developer's touch trajectory directly.
+            - **Seamless App Updates (حل مشكلة تعارض التثبيت والتحديث)**: Unified persistent debug keystore signature and updated versionCode to ensure direct upgrade over previous builds.
           draft: false
           prerelease: false
         env:

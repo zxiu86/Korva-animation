@@ -365,7 +365,7 @@ fun CanvasViewport(
                                     liveTooltipText = "∠ ${String.format(java.util.Locale.US, "%.1f", targetAngle)}°"
                                 }
 
-                                // 2. MOVE / SELECT TOOL (Pure translation from drag start baseline)
+                                // 2. MOVE / SELECT TOOL (Continuous smooth floating-point drag following user's finger)
                                 EditorTool.SELECT -> {
                                     val totalDeltaX = (change.position.x - dragStartTouchPos.x) / currentZoom
                                     val totalDeltaY = (change.position.y - dragStartTouchPos.y) / currentZoom
@@ -375,17 +375,20 @@ fun CanvasViewport(
 
                                     if (isSnap) {
                                         val sz = viewModel.gridSize.value.toFloat()
-                                        newX = kotlin.math.round(newX / sz) * sz
-                                        newY = kotlin.math.round(newY / sz) * sz
+                                        // Soft snap only when close to grid line, otherwise smooth free motion
+                                        val snapX = kotlin.math.round(newX / sz) * sz
+                                        val snapY = kotlin.math.round(newY / sz) * sz
+                                        if (abs(newX - snapX) < 4f) newX = snapX
+                                        if (abs(newY - snapY) < 4f) newY = snapY
                                     }
 
-                                    val nearZeroX = abs(newX) < 8f
-                                    val nearZeroY = abs(newY) < 8f
+                                    val nearZeroX = abs(newX) < 6f
+                                    val nearZeroY = abs(newY) < 6f
                                     snapGuideX = if (nearZeroX) 0f else null
                                     snapGuideY = if (nearZeroY) 0f else null
 
                                     viewModel.addOrUpdateKeyframeOnCurrentFrame(x = newX, y = newY)
-                                    liveTooltipText = "X: ${newX.toInt()}px, Y: ${newY.toInt()}px"
+                                    liveTooltipText = "X: ${String.format(java.util.Locale.US, "%.1f", newX)}, Y: ${String.format(java.util.Locale.US, "%.1f", newY)}"
                                 }
 
                                 // 3. SCALE TOOL (Exact handle-guided scaling without drift)
@@ -990,310 +993,174 @@ fun CanvasViewport(
         }
 
         // -------------------------------------------------------------
-        // TOP VIEWPORT HUD BAR
+        // TOP VIEWPORT SETTINGS BUTTON & POPUP (قائمة إعدادات منفذ العرض المنبثقة فقط)
         // -------------------------------------------------------------
-        Surface(
-            color = StudioPanelDark.copy(alpha = 0.92f),
-            shape = RoundedCornerShape(10.dp),
+        Box(
             modifier = Modifier
-                .padding(8.dp)
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp)),
-            shadowElevation = 6.dp
+                .align(Alignment.TopEnd)
+                .padding(10.dp)
         ) {
-            Row(
+            Surface(
+                color = if (showViewportSettingsMenu || activeOverlaysCount > 0) KorvaVioletDark.copy(alpha = 0.85f) else StudioPanelDark.copy(alpha = 0.88f),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (showViewportSettingsMenu || activeOverlaysCount > 0) KorvaVioletPrimary else StudioBorder
+                ),
+                shadowElevation = 6.dp,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .testTag("viewport_settings_popup_button")
+                    .clickable { showViewportSettingsMenu = !showViewportSettingsMenu }
             ) {
-                // Left: Frame readout & FPS
                 Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Surface(
-                        color = StudioSurfaceDark,
-                        shape = RoundedCornerShape(6.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, KorvaVioletPrimary.copy(alpha = 0.4f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text("F:", color = TextMuted, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = "${currentFrame.toInt()} / ${project.totalFrames}",
-                                color = KorvaVioletLight,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Viewport Settings",
+                        tint = if (activeOverlaysCount > 0) KorvaVioletLight else TextSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
                     Text(
-                        text = "${project.fps} FPS",
-                        color = TextSecondary,
-                        fontSize = 10.sp,
+                        text = "Settings",
+                        color = if (activeOverlaysCount > 0) Color.White else TextPrimary,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
-                }
 
-                // Center: Viewport Settings Popup Menu & Quick Action controls
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Viewport Guides & Overlays Popup Trigger Button
-                    Box {
+                    if (activeOverlaysCount > 0) {
                         Surface(
-                            color = if (showViewportSettingsMenu || activeOverlaysCount > 0) KorvaVioletDark.copy(alpha = 0.6f) else StudioSurfaceDark,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                0.8.dp,
-                                if (showViewportSettingsMenu || activeOverlaysCount > 0) KorvaVioletPrimary else StudioBorder
-                            ),
-                            modifier = Modifier
-                                .testTag("viewport_settings_popup_button")
-                                .clickable { showViewportSettingsMenu = !showViewportSettingsMenu }
+                            color = KorvaVioletPrimary,
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = "Viewport Settings",
-                                    tint = if (activeOverlaysCount > 0) KorvaVioletLight else TextSecondary,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Text(
-                                    text = "Overlays",
-                                    color = if (activeOverlaysCount > 0) Color.White else TextSecondary,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                if (activeOverlaysCount > 0) {
-                                    Surface(
-                                        color = KorvaVioletPrimary,
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text(
-                                            text = activeOverlaysCount.toString(),
-                                            color = Color.White,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp)
-                                        )
-                                    }
-                                }
-
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = TextMuted,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-
-                        // 📋 POPUP MENU FOR VIEWPORT SETTINGS (قائمة إعدادات منفذ العرض المنبثقة)
-                        DropdownMenu(
-                            expanded = showViewportSettingsMenu,
-                            onDismissRequest = { showViewportSettingsMenu = false },
-                            modifier = Modifier
-                                .background(StudioPanelDark)
-                                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
-                                .width(260.dp)
-                        ) {
-                            // Menu Header
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Tune,
-                                        contentDescription = null,
-                                        tint = KorvaVioletLight,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        "Viewport Guides & Overlays",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            HorizontalDivider(color = StudioBorder, thickness = 0.5.dp)
-
-                            // 1. Onion Skinning (Onion)
-                            ViewportMenuItem(
-                                icon = Icons.Default.Layers,
-                                title = "Onion Skinning",
-                                subtitle = "Ghost past & future animation frames",
-                                isActive = onionSkinEnabled,
-                                onClick = { viewModel.toggleOnionSkin() }
-                            )
-
-                            // 2. Motion Trajectory Path (Path)
-                            ViewportMenuItem(
-                                icon = Icons.Default.Timeline,
-                                title = "Motion Path",
-                                subtitle = "Spatial trajectory arcs & keyframe pins",
-                                isActive = showMotionTrajectory,
-                                onClick = { viewModel.toggleMotionTrajectory() }
-                            )
-
-                            // 3. Grid Alignment (Grid)
-                            ViewportMenuItem(
-                                icon = Icons.Default.GridOn,
-                                title = "Grid Alignment",
-                                subtitle = "Precision canvas coordinate grid",
-                                isActive = gridVisible,
-                                onClick = { viewModel.toggleGrid() }
-                            )
-
-                            // 4. Snap to Grid (Snap)
-                            ViewportMenuItem(
-                                icon = Icons.Default.CenterFocusStrong,
-                                title = "Snap to Grid",
-                                subtitle = "15° angular steps & 24px increments",
-                                isActive = snapToGrid,
-                                onClick = { viewModel.toggleSnapToGrid() }
-                            )
-
-                            // 5. Safe Zones (Safe)
-                            ViewportMenuItem(
-                                icon = Icons.Default.AspectRatio,
-                                title = "Safe Zones",
-                                subtitle = "Action safe (90%) & Title safe (80%)",
-                                isActive = showSafeZones,
-                                onClick = { viewModel.toggleSafeZones() }
-                            )
-
-                            // 6. Rule of Thirds (3rds)
-                            ViewportMenuItem(
-                                icon = Icons.Default.Apps,
-                                title = "Rule of Thirds",
-                                subtitle = "3x3 cinematic golden ratio guides",
-                                isActive = showRuleOfThirds,
-                                onClick = { viewModel.toggleRuleOfThirds() }
-                            )
-
-                            HorizontalDivider(color = StudioBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
-
-                            // 7. Canvas Background Mode (Canvas BG)
-                            val bgSubtitle = when (canvasBgMode) {
-                                1 -> "Checkerboard (Alpha Transparency)"
-                                2 -> "Studio Light"
-                                else -> "Obsidian Dark (Default)"
-                            }
-                            ViewportMenuItem(
-                                icon = Icons.Default.Palette,
-                                title = "Canvas Background",
-                                subtitle = bgSubtitle,
-                                isActive = canvasBgMode != 0,
-                                onClick = { viewModel.cycleCanvasBg() }
+                            Text(
+                                text = activeOverlaysCount.toString(),
+                                color = Color.White,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 4.5.dp, vertical = 1.dp)
                             )
                         }
                     }
 
-                    // Layer Quick Actions (Flip Horizontal / Vertical)
-                    if (selectedLayer != null) {
-                        Box(
-                            modifier = Modifier
-                                .height(16.dp)
-                                .width(1.dp)
-                                .background(StudioBorder)
-                        )
-
-                        // Quick Flip Horizontal (تغيير اتجاه العنصر يمين إلى يسار)
-                        Surface(
-                            color = StudioSurfaceDark,
-                            shape = RoundedCornerShape(5.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, KorvaVioletPrimary.copy(alpha = 0.6f)),
-                            modifier = Modifier.clickable { viewModel.flipLayerHorizontal() }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Icon(Icons.Default.Flip, contentDescription = "Flip Horizontal", tint = KorvaVioletLight, modifier = Modifier.size(13.dp))
-                                Text("Flip H ↔", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Quick Flip Vertical
-                        Surface(
-                            color = StudioSurfaceDark,
-                            shape = RoundedCornerShape(5.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder),
-                            modifier = Modifier.clickable { viewModel.flipLayerVertical() }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(Icons.Default.SwapVert, contentDescription = "Flip Vertical", tint = TextSecondary, modifier = Modifier.size(13.dp))
-                                Text("Flip V ↕", color = TextSecondary, fontSize = 9.sp)
-                            }
-                        }
-                    }
-                }
-
-                // Right: Zoom controls
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    IconButton(
-                        onClick = { viewModel.zoomOut() },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = TextSecondary, modifier = Modifier.size(13.dp))
-                    }
-
-                    Text(
-                        text = "${(zoom * 100).toInt()}%",
-                        color = TextPrimary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { viewModel.resetViewport() }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = TextMuted,
+                        modifier = Modifier.size(16.dp)
                     )
+                }
+            }
 
-                    IconButton(
-                        onClick = { viewModel.zoomIn() },
-                        modifier = Modifier.size(24.dp)
+            // 📋 POPUP MENU FOR VIEWPORT SETTINGS (قائمة إعدادات منفذ العرض المنبثقة)
+            DropdownMenu(
+                expanded = showViewportSettingsMenu,
+                onDismissRequest = { showViewportSettingsMenu = false },
+                modifier = Modifier
+                    .background(StudioPanelDark)
+                    .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                    .width(260.dp)
+            ) {
+                // Menu Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = TextSecondary, modifier = Modifier.size(13.dp))
-                    }
-
-                    IconButton(
-                        onClick = { viewModel.resetViewport() },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(Icons.Default.FitScreen, contentDescription = "Fit Canvas", tint = KorvaVioletLight, modifier = Modifier.size(14.dp))
+                        Icon(
+                            Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = KorvaVioletLight,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            "Viewport Guides & Overlays",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
+
+                HorizontalDivider(color = StudioBorder, thickness = 0.5.dp)
+
+                // 1. Onion Skinning (Onion)
+                ViewportMenuItem(
+                    icon = Icons.Default.Layers,
+                    title = "Onion Skinning",
+                    subtitle = "Ghost past & future animation frames",
+                    isActive = onionSkinEnabled,
+                    onClick = { viewModel.toggleOnionSkin() }
+                )
+
+                // 2. Motion Trajectory Path (Path)
+                ViewportMenuItem(
+                    icon = Icons.Default.Timeline,
+                    title = "Motion Path",
+                    subtitle = "Spatial trajectory arcs & keyframe pins",
+                    isActive = showMotionTrajectory,
+                    onClick = { viewModel.toggleMotionTrajectory() }
+                )
+
+                // 3. Grid Alignment (Grid)
+                ViewportMenuItem(
+                    icon = Icons.Default.GridOn,
+                    title = "Grid Alignment",
+                    subtitle = "Precision canvas coordinate grid",
+                    isActive = gridVisible,
+                    onClick = { viewModel.toggleGrid() }
+                )
+
+                // 4. Snap to Grid (Snap)
+                ViewportMenuItem(
+                    icon = Icons.Default.CenterFocusStrong,
+                    title = "Snap to Grid",
+                    subtitle = "15° angular steps & smooth increments",
+                    isActive = snapToGrid,
+                    onClick = { viewModel.toggleSnapToGrid() }
+                )
+
+                // 5. Safe Zones (Safe)
+                ViewportMenuItem(
+                    icon = Icons.Default.AspectRatio,
+                    title = "Safe Zones",
+                    subtitle = "Action safe (90%) & Title safe (80%)",
+                    isActive = showSafeZones,
+                    onClick = { viewModel.toggleSafeZones() }
+                )
+
+                // 6. Rule of Thirds (3rds)
+                ViewportMenuItem(
+                    icon = Icons.Default.Apps,
+                    title = "Rule of Thirds",
+                    subtitle = "3x3 cinematic golden ratio guides",
+                    isActive = showRuleOfThirds,
+                    onClick = { viewModel.toggleRuleOfThirds() }
+                )
+
+                HorizontalDivider(color = StudioBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 2.dp))
+
+                // 7. Canvas Background Mode (Canvas BG)
+                val bgSubtitle = when (canvasBgMode) {
+                    1 -> "Checkerboard (Alpha Transparency)"
+                    2 -> "Studio Light"
+                    else -> "Obsidian Dark (Default)"
+                }
+                ViewportMenuItem(
+                    icon = Icons.Default.Palette,
+                    title = "Canvas Background",
+                    subtitle = bgSubtitle,
+                    isActive = canvasBgMode != 0,
+                    onClick = { viewModel.cycleCanvasBg() }
+                )
             }
         }
 
