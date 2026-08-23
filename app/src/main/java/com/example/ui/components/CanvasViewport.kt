@@ -189,6 +189,8 @@ fun CanvasViewport(
     val showSafeZones by viewModel.showSafeZones.collectAsState()
     val showRuleOfThirds by viewModel.showRuleOfThirds.collectAsState()
     val canvasBgMode by viewModel.canvasBgMode.collectAsState()
+    val activeVfxCount by viewModel.vfxActiveParticleCount.collectAsState()
+    val currentVFXEffect by viewModel.currentVFXEffect.collectAsState()
 
     val selectedLayer = project.layers.find { it.id == selectedLayerId }
     val selectedTransform = selectedLayer?.let { EasingFunctions.evaluateLayerAtFrame(it, currentFrame) }
@@ -766,6 +768,14 @@ fun CanvasViewport(
                 stageCenterY = stageCenterY,
                 zoom = zoom,
                 tintOverride = null
+            )
+
+            // 9.5 Render Live 60fps VFX Particle Physics System
+            drawVFXParticles(
+                vfxEngine = viewModel.vfxEngine,
+                stageCenterX = stageCenterX,
+                stageCenterY = stageCenterY,
+                zoom = zoom
             )
 
             // 10. Frame Outline
@@ -1491,6 +1501,58 @@ private fun DrawScope.drawProjectLayers(
                     drawPath(path = path, color = fillColor)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Real-Time 60/120fps Particle VFX Renderer.
+ * Evaluates individual particle states from VFXSimulationEngine with Additive Blending.
+ */
+private fun DrawScope.drawVFXParticles(
+    vfxEngine: com.example.engine.vfx.VFXSimulationEngine,
+    stageCenterX: Float,
+    stageCenterY: Float,
+    zoom: Float
+) {
+    val particles = vfxEngine.pool.particles
+    val isAdditive = vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.ADDITIVE
+
+    for (p in particles) {
+        if (!p.isActive) continue
+
+        val px = stageCenterX + p.position.x * zoom
+        val py = stageCenterY + p.position.y * zoom
+        val sw = max(p.scale.x * zoom, 1.5f)
+        val sh = max(p.scale.y * zoom, 1.5f)
+
+        val alpha = (p.alpha * p.color.a).coerceIn(0f, 1f)
+        if (alpha <= 0.01f) continue
+
+        val particleColor = Color(
+            red = p.color.r / 255f,
+            green = p.color.g / 255f,
+            blue = p.color.b / 255f,
+            alpha = alpha
+        )
+
+        withTransform({
+            translate(px, py)
+            rotate(p.rotation, Offset.Zero)
+        }) {
+            if (isAdditive) {
+                // Luminous additive glow halo
+                drawCircle(
+                    color = particleColor.copy(alpha = alpha * 0.35f),
+                    radius = max(sw, sh) * 0.9f,
+                    center = Offset.Zero
+                )
+            }
+            drawOval(
+                color = particleColor,
+                topLeft = Offset(-sw / 2f, -sh / 2f),
+                size = Size(sw, sh)
+            )
         }
     }
 }

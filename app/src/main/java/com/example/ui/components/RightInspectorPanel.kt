@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.sp
 import com.example.model.AnimationLayer
 import com.example.model.EasingFunctions
 import com.example.model.EasingType
+import com.example.model.vfx.*
+import com.example.data.VFXPresets
 import com.example.ui.theme.*
 import com.example.viewmodel.KorvaViewModel
 
@@ -84,7 +86,7 @@ fun RightInspectorPanel(
                 }
 
                 if (!isCollapsed) {
-                    // Modern Tab Pills: PROPERTIES vs LAYERS
+                    // Modern Tab Pills: PROPERTIES vs LAYERS vs VFX
                     Row(
                         modifier = Modifier
                             .background(StudioPanelDark, RoundedCornerShape(12.dp))
@@ -103,6 +105,12 @@ fun RightInspectorPanel(
                             isSelected = inspectorTab == 1,
                             onClick = { viewModel.setInspectorTab(1) }
                         )
+                        TabPillButton(
+                            text = "VFX",
+                            icon = Icons.Default.AutoAwesome,
+                            isSelected = inspectorTab == 2,
+                            onClick = { viewModel.setInspectorTab(2) }
+                        )
                     }
                 }
             }
@@ -110,17 +118,19 @@ fun RightInspectorPanel(
             if (!isCollapsed) {
                 HorizontalDivider(color = StudioBorder)
 
-                if (inspectorTab == 0) {
-                    PropertiesTabContent(
+                when (inspectorTab) {
+                    0 -> PropertiesTabContent(
                         viewModel = viewModel,
                         selectedLayer = selectedLayer,
                         currentFrame = currentFrame
                     )
-                } else {
-                    LayersTabContent(
+                    1 -> LayersTabContent(
                         viewModel = viewModel,
                         layers = project.layers,
                         selectedLayerId = selectedLayerId
+                    )
+                    2 -> VfxTabContent(
+                        viewModel = viewModel
                     )
                 }
             }
@@ -788,6 +798,375 @@ private fun NumberPropertyBox(
                 modifier = Modifier.size(15.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(9.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun VfxTabContent(
+    viewModel: KorvaViewModel
+) {
+    val effect by viewModel.currentVFXEffect.collectAsState()
+    val isSimulating by viewModel.isVfxSimulating.collectAsState()
+    val activeParticleCount by viewModel.vfxActiveParticleCount.collectAsState()
+    val selectedEmitterIndex by viewModel.selectedEmitterIndex.collectAsState()
+
+    val isNativeLoaded = com.korva.engine.VFXNativeBridge.isNativeLoaded || com.example.engine.vfx.VFXNativeBridge.isNativeLoaded
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Engine Status Card
+        Surface(
+            color = if (isNativeLoaded) StudioGreen.copy(alpha = 0.12f) else KorvaVioletDark.copy(alpha = 0.35f),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (isNativeLoaded) StudioGreen else KorvaVioletPrimary.copy(alpha = 0.5f))
+        ) {
+            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(
+                            imageVector = if (isNativeLoaded) Icons.Default.CheckCircle else Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = if (isNativeLoaded) StudioGreen else StudioCyan,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (isNativeLoaded) "C++ JNI (arm64-v8a)" else "KOTLIN VFX ENGINE",
+                            color = if (isNativeLoaded) StudioGreen else StudioCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Surface(
+                        color = KorvaVioletPrimary.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "$activeParticleCount / 2048 pts",
+                            color = KorvaVioletLight,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                // Controls Row: Play/Pause & Reset
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.toggleVFXSimulation() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSimulating) StudioOrange else KorvaVioletPrimary
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(28.dp)
+                    ) {
+                        Icon(
+                            if (isSimulating) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(if (isSimulating) "Pause" else "Simulate", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.resetVFXSimulation() },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Reset", fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+
+        // VFX Presets Selector
+        Text("VFX PRESETS", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val presets = listOf(
+                "Fire" to VFXPresets.createFireExplosion(),
+                "Cosmic" to VFXPresets.createMagicSparkles(),
+                "Slash" to VFXPresets.createEnergySlash(),
+                "Gold" to VFXPresets.createGoldCoinBurst()
+            )
+            presets.forEach { (label, preset) ->
+                val isSelected = effect.effectId == preset.effectId
+                Surface(
+                    color = if (isSelected) KorvaVioletDark else StudioSurfaceDark,
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        0.5.dp,
+                        if (isSelected) KorvaVioletPrimary else StudioBorder
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { viewModel.selectVFXPreset(preset) }
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isSelected) Color.White else TextSecondary,
+                        fontSize = 9.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(vertical = 5.dp)
+                    )
+                }
+            }
+        }
+
+        // Effect Global Properties
+        Surface(
+            color = StudioSurfaceDark,
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
+        ) {
+            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("EFFECT CONFIGURATION", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Blend Mode", color = TextPrimary, fontSize = 10.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Surface(
+                            color = if (effect.blendMode == BlendMode.ADDITIVE) KorvaVioletPrimary else StudioPanelDark,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.clickable { viewModel.updateVFXBlendMode(BlendMode.ADDITIVE) }
+                        ) {
+                            Text("Additive", color = Color.White, fontSize = 8.5.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                        Surface(
+                            color = if (effect.blendMode == BlendMode.NORMAL) KorvaVioletPrimary else StudioPanelDark,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.clickable { viewModel.updateVFXBlendMode(BlendMode.NORMAL) }
+                        ) {
+                            Text("Normal", color = Color.White, fontSize = 8.5.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Duration: ${String.format(java.util.Locale.US, "%.1f", effect.duration)}s", color = TextPrimary, fontSize = 10.sp)
+                    Slider(
+                        value = effect.duration,
+                        onValueChange = { viewModel.updateVFXDuration(it) },
+                        valueRange = 0.5f..8.0f,
+                        modifier = Modifier.width(100.dp).height(20.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = KorvaVioletLight,
+                            activeTrackColor = KorvaVioletPrimary,
+                            inactiveTrackColor = StudioBorder
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Looping", color = TextPrimary, fontSize = 10.sp)
+                    Switch(
+                        checked = effect.looping,
+                        onCheckedChange = { viewModel.updateVFXLooping(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = KorvaVioletPrimary,
+                            uncheckedThumbColor = TextMuted,
+                            uncheckedTrackColor = StudioPanelDark
+                        ),
+                        modifier = Modifier.height(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Emitters Section
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("EMITTERS (${effect.emitters.size})", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            IconButton(
+                onClick = { viewModel.addEmitterToCurrentEffect() },
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(Icons.Default.AddCircle, contentDescription = "Add Emitter", tint = KorvaVioletLight, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        effect.emitters.forEachIndexed { index, emitter ->
+            val isSelected = index == selectedEmitterIndex
+            Surface(
+                color = if (isSelected) KorvaVioletDark.copy(alpha = 0.25f) else StudioSurfaceDark,
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isSelected) KorvaVioletPrimary else StudioBorder
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.clickable { viewModel.setSelectedEmitterIndex(index) }
+                        ) {
+                            Icon(Icons.Default.Grain, contentDescription = null, tint = KorvaVioletLight, modifier = Modifier.size(14.dp))
+                            Text(emitter.name, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (effect.emitters.size > 1) {
+                            IconButton(
+                                onClick = {
+                                    viewModel.setSelectedEmitterIndex(index)
+                                    viewModel.removeSelectedEmitter()
+                                },
+                                modifier = Modifier.size(18.dp)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = StudioRed, modifier = Modifier.size(13.dp))
+                            }
+                        }
+                    }
+
+                    if (isSelected) {
+                        // Spawn Rate Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Rate: ${emitter.spawnRate.toInt()}/s", color = TextSecondary, fontSize = 9.5.sp)
+                            Slider(
+                                value = emitter.spawnRate,
+                                onValueChange = { viewModel.updateEmitterSpawnRate(index, it) },
+                                valueRange = 10f..400f,
+                                modifier = Modifier.width(100.dp).height(18.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = KorvaVioletLight,
+                                    activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Particle Lifetime Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Lifetime: ${String.format(java.util.Locale.US, "%.1f", emitter.particleLifetime)}s", color = TextSecondary, fontSize = 9.5.sp)
+                            Slider(
+                                value = emitter.particleLifetime,
+                                onValueChange = { viewModel.updateEmitterLifetime(index, it) },
+                                valueRange = 0.2f..4.0f,
+                                modifier = Modifier.width(100.dp).height(18.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = KorvaVioletLight,
+                                    activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Shape Selector Chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            ShapeType.entries.forEach { shape ->
+                                val isShapeSelected = emitter.shapeType == shape
+                                Surface(
+                                    color = if (isShapeSelected) KorvaVioletPrimary else StudioPanelDark,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.updateEmitterShape(index, shape) }
+                                ) {
+                                    Text(
+                                        text = shape.displayName.take(4),
+                                        color = if (isShapeSelected) Color.White else TextMuted,
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Modules: Physics & Color
+        Surface(
+            color = StudioSurfaceDark,
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
+        ) {
+            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("PHYSICS MODULES", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+
+                val selectedEmitter = effect.emitters.getOrNull(selectedEmitterIndex) ?: effect.emitters.firstOrNull()
+                val gravityMod = selectedEmitter?.findGravityModule()
+                val currentGravity = gravityMod?.gravity ?: 0f
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Gravity Y: ${currentGravity.toInt()} m/s²", color = TextPrimary, fontSize = 9.5.sp)
+                    Slider(
+                        value = currentGravity,
+                        onValueChange = {
+                            viewModel.updateEmitterGravity(selectedEmitterIndex, it)
+                        },
+                        valueRange = -50f..50f,
+                        modifier = Modifier.width(100.dp).height(18.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = StudioCyan,
+                            activeTrackColor = StudioCyan,
+                            inactiveTrackColor = StudioBorder
+                        )
+                    )
+                }
             }
         }
     }

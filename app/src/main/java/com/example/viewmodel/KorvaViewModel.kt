@@ -13,6 +13,10 @@ import com.example.data.SpriteLibrary
 import com.example.engine.KorExporter
 import com.example.engine.SpriteSheetGenerator
 import com.example.model.*
+import com.example.model.vfx.*
+import com.example.engine.vfx.KorvBinarySerializer
+import com.example.engine.vfx.VFXSimulationEngine
+import com.example.data.VFXPresets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,6 +42,25 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _project = MutableStateFlow(SampleProjects.createDefaultProject())
     val project: StateFlow<KorProject> = _project.asStateFlow()
+
+    // ----------------------------------------------------
+    // VFX & PARTICLE ENGINE STATE (Korva VFX System 1.0)
+    // ----------------------------------------------------
+    val vfxEngine = VFXSimulationEngine(VFXPresets.createFireExplosion())
+
+    private val _currentVFXEffect = MutableStateFlow(VFXPresets.createFireExplosion())
+    val currentVFXEffect: StateFlow<VFXEffect> = _currentVFXEffect.asStateFlow()
+
+    private val _vfxActiveParticleCount = MutableStateFlow(0)
+    val vfxActiveParticleCount: StateFlow<Int> = _vfxActiveParticleCount.asStateFlow()
+
+    private val _isVfxSimulating = MutableStateFlow(true)
+    val isVfxSimulating: StateFlow<Boolean> = _isVfxSimulating.asStateFlow()
+
+    private val _selectedEmitterIndex = MutableStateFlow(0)
+    val selectedEmitterIndex: StateFlow<Int> = _selectedEmitterIndex.asStateFlow()
+
+    private var vfxSimJob: Job? = null
 
     private val _selectedLayerId = MutableStateFlow<String?>(null)
     val selectedLayerId: StateFlow<String?> = _selectedLayerId.asStateFlow()
@@ -169,6 +192,208 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         // Default select top layer
         _project.value.layers.lastOrNull()?.let {
             _selectedLayerId.value = it.id
+        }
+
+        // Start High-Speed 60fps VFX Engine simulation loop
+        startVFXSimulation()
+    }
+
+    fun startVFXSimulation() {
+        vfxSimJob?.cancel()
+        _isVfxSimulating.value = true
+        vfxSimJob = viewModelScope.launch(Dispatchers.Default) {
+            var lastTime = System.currentTimeMillis()
+            while (isActive && _isVfxSimulating.value) {
+                val now = System.currentTimeMillis()
+                val dt = (now - lastTime).coerceIn(1, 50) / 1000f
+                lastTime = now
+
+                vfxEngine.update(dt)
+                _vfxActiveParticleCount.value = vfxEngine.pool.activeCount
+
+                delay(16) // ~60 FPS
+            }
+        }
+    }
+
+    fun toggleVFXSimulation() {
+        if (_isVfxSimulating.value) {
+            _isVfxSimulating.value = false
+            vfxSimJob?.cancel()
+        } else {
+            startVFXSimulation()
+        }
+    }
+
+    fun resetVFXSimulation() {
+        vfxEngine.reset()
+        _vfxActiveParticleCount.value = 0
+    }
+
+    fun selectVFXPreset(preset: VFXEffect) {
+        val cloned = preset.copy(
+            emitters = preset.emitters.map { it.copy(modules = it.modules.toMutableList()) }.toMutableList()
+        )
+        _currentVFXEffect.value = cloned
+        vfxEngine.setEffectTarget(cloned)
+        _selectedEmitterIndex.value = 0
+        postStatus("Loaded VFX Preset: ${preset.name}")
+    }
+
+    fun setSelectedEmitterIndex(index: Int) {
+        _selectedEmitterIndex.value = index.coerceIn(0, (_currentVFXEffect.value.emitters.size - 1).coerceAtLeast(0))
+    }
+
+    fun updateSelectedEmitter(mutate: (VFXEmitter) -> Unit) {
+        val effect = _currentVFXEffect.value
+        val idx = _selectedEmitterIndex.value
+        if (idx in 0 until effect.emitters.size) {
+            mutate(effect.emitters[idx])
+            vfxEngine.setEffectTarget(effect)
+            _currentVFXEffect.value = effect.copy()
+        }
+    }
+
+    fun updateVFXDuration(duration: Float) {
+        val effect = _currentVFXEffect.value
+        effect.duration = duration.coerceIn(0.2f, 30f)
+        _currentVFXEffect.value = effect.copy()
+        vfxEngine.setEffectTarget(effect)
+    }
+
+    fun updateVFXLooping(looping: Boolean) {
+        val effect = _currentVFXEffect.value
+        effect.looping = looping
+        _currentVFXEffect.value = effect.copy()
+        vfxEngine.setEffectTarget(effect)
+    }
+
+    fun updateVFXBlendMode(blendMode: BlendMode) {
+        val effect = _currentVFXEffect.value
+        effect.blendMode = blendMode
+        _currentVFXEffect.value = effect.copy()
+        vfxEngine.setEffectTarget(effect)
+    }
+
+    fun updateEmitterSpawnRate(index: Int, rate: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].spawnRate = rate.coerceIn(1f, 500f)
+            _currentVFXEffect.value = effect.copy()
+            vfxEngine.setEffectTarget(effect)
+        }
+    }
+
+    fun updateEmitterLifetime(index: Int, lifetime: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].particleLifetime = lifetime.coerceIn(0.1f, 10f)
+            _currentVFXEffect.value = effect.copy()
+            vfxEngine.setEffectTarget(effect)
+        }
+    }
+
+    fun updateEmitterShape(index: Int, shape: ShapeType) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].shapeType = shape
+            _currentVFXEffect.value = effect.copy()
+            vfxEngine.setEffectTarget(effect)
+        }
+    }
+
+    fun updateEmitterGravity(index: Int, gravity: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val grav = emitter.findGravityModule()
+            if (grav != null) {
+                grav.gravity = gravity
+            } else {
+                emitter.modules.add(GravityModule(gravity = gravity))
+            }
+            _currentVFXEffect.value = effect.copy()
+            vfxEngine.setEffectTarget(effect)
+        }
+    }
+
+    fun addEmitterToCurrentEffect(name: String = "New Emitter", shapeType: ShapeType = ShapeType.CIRCLE) {
+        val effect = _currentVFXEffect.value
+        val newEmitter = VFXEmitter(
+            name = name,
+            shapeType = shapeType,
+            shapeSize = Vector2(15f, 15f),
+            spawnRate = 50f,
+            particleLifetime = 1.5f,
+            speedMin = 20f,
+            speedMax = 60f,
+            spreadAngle = 60f
+        )
+        newEmitter.modules.add(GravityModule(gravity = -2f))
+        newEmitter.modules.add(ScaleModule(VFXCurve(interpolation = InterpolationType.CUBIC).apply {
+            addKeyframe(0f, 0.2f)
+            addKeyframe(0.5f, 1f)
+            addKeyframe(1f, 0f)
+        }))
+        newEmitter.modules.add(ColorModule(VFXGradient().apply {
+            addKey(0f, ColorRGBA(255, 200, 50, 1f))
+            addKey(1f, ColorRGBA(255, 50, 0, 0f))
+        }))
+
+        effect.emitters.add(newEmitter)
+        _currentVFXEffect.value = effect.copy()
+        vfxEngine.setEffectTarget(effect)
+        _selectedEmitterIndex.value = effect.emitters.size - 1
+        postStatus("Added Emitter: $name")
+    }
+
+    fun removeSelectedEmitter() {
+        val effect = _currentVFXEffect.value
+        if (effect.emitters.size <= 1) {
+            postStatus("Cannot remove the only emitter in effect")
+            return
+        }
+        val idx = _selectedEmitterIndex.value
+        if (idx in 0 until effect.emitters.size) {
+            val removed = effect.emitters.removeAt(idx)
+            _selectedEmitterIndex.value = 0
+            _currentVFXEffect.value = effect.copy()
+            vfxEngine.setEffectTarget(effect)
+            postStatus("Removed emitter: ${removed.name}")
+        }
+    }
+
+    fun exportKorvBinary(): ByteArray {
+        return KorvBinarySerializer.serialize(_currentVFXEffect.value)
+    }
+
+    fun importKorvBinary(bytes: ByteArray): Boolean {
+        val effect = KorvBinarySerializer.deserialize(bytes)
+        return if (effect != null) {
+            _currentVFXEffect.value = effect
+            vfxEngine.setEffectTarget(effect)
+            _selectedEmitterIndex.value = 0
+            postStatus("Loaded .korv Binary: ${effect.name} (${bytes.size} bytes)")
+            true
+        } else {
+            postStatus("Failed to deserialize .korv binary")
+            false
+        }
+    }
+
+    fun saveKorvFileToDevice(context: Context): String? {
+        return try {
+            val bytes = exportKorvBinary()
+            val safeName = _currentVFXEffect.value.name.replace("\\s+".toRegex(), "_").lowercase()
+            val filename = "${safeName}.korv"
+            val file = File(context.filesDir, filename)
+            file.writeBytes(bytes)
+            postStatus("Saved binary VFX: $filename (${bytes.size} bytes, CRC32 Verified)")
+            file.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            postStatus("Error saving .korv binary: ${e.localizedMessage}")
+            null
         }
     }
 

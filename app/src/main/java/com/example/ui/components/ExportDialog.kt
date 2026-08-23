@@ -109,17 +109,22 @@ fun ExportDialog(
                     Tab(
                         selected = exportTab == 0,
                         onClick = { exportTab = 0 },
-                        text = { Text(".kor Project File", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                        text = { Text(".kor Project", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                     )
                     Tab(
                         selected = exportTab == 1,
                         onClick = { exportTab = 1 },
-                        text = { Text("Sprite Sheet PNG", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                        text = { Text("Sprite Sheet", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                     )
                     Tab(
                         selected = exportTab == 2,
                         onClick = { exportTab = 2 },
-                        text = { Text("Godot / Unity 2D", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                        text = { Text("Godot / Unity", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                    )
+                    Tab(
+                        selected = exportTab == 3,
+                        onClick = { exportTab = 3 },
+                        text = { Text("⚡ .korv VFX", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StudioCyan) }
                     )
                 }
 
@@ -144,6 +149,7 @@ fun ExportDialog(
                             exportedPath = exportedPath
                         )
                         2 -> EngineExportTab(viewModel, context)
+                        3 -> KorvBinaryExportTab(viewModel, context)
                     }
                 }
             }
@@ -420,6 +426,192 @@ private fun EngineExportTab(
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(10.dp).verticalScroll(rememberScrollState())
+            )
+        }
+    }
+}
+
+@Composable
+private fun KorvBinaryExportTab(
+    viewModel: KorvaViewModel,
+    context: Context
+) {
+    val effect by viewModel.currentVFXEffect.collectAsState()
+    val binaryBytes = remember(effect) { viewModel.exportKorvBinary() }
+    val validation = remember(binaryBytes) { com.example.engine.vfx.KorvBinarySerializer.validate(binaryBytes) }
+    val hexDump = remember(binaryBytes) { com.example.engine.vfx.KorvBinarySerializer.formatHexDump(binaryBytes, 12) }
+    var savedPath by remember { mutableStateOf<String?>(null) }
+    var copiedHex by remember { mutableStateOf(false) }
+
+    val isNativeLoaded = com.korva.engine.VFXNativeBridge.isNativeLoaded || com.example.engine.vfx.VFXNativeBridge.isNativeLoaded
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Native Engine Status Banner
+        Surface(
+            color = if (isNativeLoaded) StudioGreen.copy(alpha = 0.15f) else StudioCyan.copy(alpha = 0.15f),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (isNativeLoaded) StudioGreen else StudioCyan)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        imageVector = if (isNativeLoaded) Icons.Default.CheckCircle else Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = if (isNativeLoaded) StudioGreen else StudioCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = if (isNativeLoaded) "Native Engine Connected (libkorva_vfx.so)" else "Korva VFX Engine 1.0 (Ready for libkorva_vfx.so)",
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (isNativeLoaded) "Target ABI: arm64-v8a • Direct C++ Simulation" else "Place libkorva_vfx.so into /app/src/main/jniLibs/arm64-v8a/",
+                            color = TextSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    color = if (isNativeLoaded) StudioGreen else StudioCyan,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (isNativeLoaded) "C++ JNI" else "READY",
+                        color = Color.Black,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+
+        // Binary File Specs Card
+        Surface(
+            color = StudioObsidianDark,
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder)
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Effect: ${effect.name}", color = KorvaVioletLight, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("ID: ${effect.effectId}", color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("File Size: ${binaryBytes.size} bytes", color = TextPrimary, fontSize = 11.sp)
+                    Text("Emitters: ${effect.emitters.size}", color = TextPrimary, fontSize = 11.sp)
+                    Text("Duration: ${effect.duration}s", color = TextPrimary, fontSize = 11.sp)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Magic Header: KORV", color = StudioGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text("End Marker: 0xDEADBEEF", color = StudioGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                }
+                Text(
+                    text = validation.message,
+                    color = if (validation.isValid) StudioGreen else StudioRed,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        // Action Buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    savedPath = viewModel.saveKorvFileToDevice(context)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = StudioCyan),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Save .korv File", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val base64 = android.util.Base64.encodeToString(binaryBytes, android.util.Base64.NO_WRAP)
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText(".korv Base64", base64))
+                    copiedHex = true
+                },
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (copiedHex) "Copied Base64!" else "Copy Base64", fontSize = 11.sp)
+            }
+        }
+
+        if (savedPath != null) {
+            Surface(
+                color = StudioGreen.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, StudioGreen)
+            ) {
+                Text(
+                    text = "✓ Exported binary file to: $savedPath",
+                    color = StudioGreen,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+
+        // Hex Dump View
+        Text(
+            text = "Binary Stream Hex Inspection (.korv v1.0):",
+            color = TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Surface(
+            color = StudioObsidianDark,
+            shape = RoundedCornerShape(6.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+        ) {
+            Text(
+                text = hexDump,
+                color = TextSecondary,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .padding(8.dp)
+                    .verticalScroll(rememberScrollState())
             )
         }
     }
