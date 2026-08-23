@@ -774,69 +774,119 @@ fun CanvasViewport(
 
                 when (activeTool) {
                     EditorTool.ROTATE -> {
-                        // 🔵 SPECIALIZED CIRCULAR ROTATION DIAL GIZMO 🔵
-                        val rotRadius = max(max(abs(geo.r0 - geo.l0), abs(geo.b0 - geo.t0)) * 0.65f + 32f * zoom, 56f)
+                        // 🔵 AXIAL SYNCHRONIZED CIRCULAR ROTATION DIAL GIZMO 🔵
+                        // Compute exact maximum radial extent from rotation axis (pivot) to all corners
+                        val maxCornerDist = maxOf(
+                            hypot(geo.pTL.x, geo.pTL.y),
+                            hypot(geo.pTR.x, geo.pTR.y),
+                            hypot(geo.pBR.x, geo.pBR.y),
+                            hypot(geo.pBL.x, geo.pBL.y)
+                        )
+                        val rotRadius = max(maxCornerDist + 32f, 58f)
 
-                        // Subtle bounding box
+                        // 1. Semi-transparent disc backdrop centering the element inside the dial
+                        drawCircle(
+                            color = StudioCyan.copy(alpha = 0.04f),
+                            radius = rotRadius,
+                            center = geo.origin
+                        )
+
+                        // 2. Synchronized Rotating Element Bounding Box
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
                             rotate(geo.rotationDeg)
                         }) {
-                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pTL, geo.pTR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
-                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pTR, geo.pBR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
-                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pBR, geo.pBL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
-                            drawLine(KorvaVioletPrimary.copy(alpha = 0.35f), geo.pBL, geo.pTL, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTL, geo.pTR, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTR, geo.pBR, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pBR, geo.pBL, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
+                            drawLine(StudioCyan.copy(alpha = 0.5f), geo.pBL, geo.pTL, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
+
+                            // Corner bounding markers
+                            val cLen = 10f
+                            drawLine(StudioCyan, geo.pTL, Offset(geo.pTL.x + cLen, geo.pTL.y), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pTL, Offset(geo.pTL.x, geo.pTL.y + cLen), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pTR, Offset(geo.pTR.x - cLen, geo.pTR.y), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pTR, Offset(geo.pTR.x, geo.pTR.y + cLen), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pBR, Offset(geo.pBR.x - cLen, geo.pBR.y), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pBR, Offset(geo.pBR.x, geo.pBR.y - cLen), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pBL, Offset(geo.pBL.x + cLen, geo.pBL.y), strokeWidth = 2.5f)
+                            drawLine(StudioCyan, geo.pBL, Offset(geo.pBL.x, geo.pBL.y - cLen), strokeWidth = 2.5f)
                         }
 
-                        // Outer glowing circular track
+                        // 3. Outer glowing circular track
                         drawCircle(
-                            color = StudioCyan.copy(alpha = 0.18f),
+                            color = StudioCyan.copy(alpha = 0.16f),
                             radius = rotRadius + 4f,
                             center = geo.origin,
                             style = Stroke(width = 6f)
                         )
 
-                        // Main Circular Orbit Track
+                        // 4. Main Circular Orbit Track (Concentric around layer axis)
                         drawCircle(
-                            color = StudioCyan,
+                            color = StudioCyan.copy(alpha = 0.85f),
                             radius = rotRadius,
                             center = geo.origin,
                             style = Stroke(width = 2.2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f))
                         )
 
-                        // 8 Cardinal & Diagonal Compass Ticks (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
-                        for (deg in 0 until 360 step 45) {
-                            val rad = Math.toRadians(deg.toDouble()).toFloat()
-                            val tLen = if (deg % 90 == 0) 9f else 5f
+                        // 5. Degree Sweep Arc (from top 0° to current angle)
+                        val startAngleArc = -90f
+                        val sweepAngleArc = (geo.rotationDeg % 360f)
+                        drawArc(
+                            color = StudioCyan.copy(alpha = 0.18f),
+                            startAngle = startAngleArc,
+                            sweepAngle = sweepAngleArc,
+                            useCenter = true,
+                            topLeft = Offset(geo.origin.x - rotRadius, geo.origin.y - rotRadius),
+                            size = Size(rotRadius * 2f, rotRadius * 2f)
+                        )
+                        drawArc(
+                            color = StudioCyan,
+                            startAngle = startAngleArc,
+                            sweepAngle = sweepAngleArc,
+                            useCenter = false,
+                            topLeft = Offset(geo.origin.x - rotRadius, geo.origin.y - rotRadius),
+                            size = Size(rotRadius * 2f, rotRadius * 2f),
+                            style = Stroke(width = 3f)
+                        )
+
+                        // 6. Cardinal & Diagonal Compass Ticks (every 30° and 45°)
+                        for (deg in 0 until 360 step 30) {
+                            val rad = Math.toRadians(deg.toDouble() - 90.0).toFloat()
+                            val isCardinal = deg % 90 == 0
+                            val tLen = if (isCardinal) 10f else 5f
                             val p1 = Offset(geo.origin.x + (rotRadius - tLen) * cos(rad), geo.origin.y + (rotRadius - tLen) * sin(rad))
                             val p2 = Offset(geo.origin.x + (rotRadius + tLen) * cos(rad), geo.origin.y + (rotRadius + tLen) * sin(rad))
                             drawLine(
-                                color = if (deg % 90 == 0) StudioCyan else StudioCyan.copy(alpha = 0.5f),
+                                color = if (isCardinal) StudioCyan else StudioCyan.copy(alpha = 0.45f),
                                 start = p1,
                                 end = p2,
-                                strokeWidth = if (deg % 90 == 0) 2.2f else 1.2f
+                                strokeWidth = if (isCardinal) 2.5f else 1.2f
                             )
                         }
 
-                        // Radial pointer line from origin to knob
+                        // 7. Radial pointer line connecting rotation axis to outer knob
                         val curRad = Math.toRadians(geo.rotationDeg.toDouble() - 90.0).toFloat()
                         val knobPos = Offset(geo.origin.x + rotRadius * cos(curRad), geo.origin.y + rotRadius * sin(curRad))
                         drawLine(
                             color = StudioCyan,
                             start = geo.origin,
                             end = knobPos,
-                            strokeWidth = 2.2f
+                            strokeWidth = 2.4f
                         )
 
-                        // Blue Circular Dial Control Knob 🔵
-                        drawCircle(color = Color(0x660284C7), radius = 18f, center = knobPos)
-                        drawCircle(color = Color(0xFF0284C7), radius = 11f, center = knobPos)
-                        drawCircle(color = StudioCyan, radius = 11f, center = knobPos, style = Stroke(2.5f))
+                        // 8. Blue Circular Dial Control Knob 🔵
+                        drawCircle(color = Color(0x660284C7), radius = 20f, center = knobPos)
+                        drawCircle(color = Color(0xFF0284C7), radius = 12f, center = knobPos)
+                        drawCircle(color = StudioCyan, radius = 12f, center = knobPos, style = Stroke(2.5f))
                         drawCircle(color = Color.White, radius = 4f, center = knobPos)
 
-                        // Center Pivot Pin
-                        drawCircle(color = StudioCyan, radius = 5.5f, center = geo.origin)
-                        drawCircle(color = Color.White, radius = 2.2f, center = geo.origin)
+                        // 9. Precision Rotation Axis Reticle / Crosshair (محور الدوران)
+                        val retLen = 14f
+                        drawLine(StudioCyan.copy(alpha = 0.8f), Offset(geo.origin.x - retLen, geo.origin.y), Offset(geo.origin.x + retLen, geo.origin.y), strokeWidth = 1.5f)
+                        drawLine(StudioCyan.copy(alpha = 0.8f), Offset(geo.origin.x, geo.origin.y - retLen), Offset(geo.origin.x, geo.origin.y + retLen), strokeWidth = 1.5f)
+                        drawCircle(color = StudioCyan, radius = 6f, center = geo.origin, style = Stroke(2f))
+                        drawCircle(color = Color.White, radius = 2.5f, center = geo.origin)
                     }
 
                     EditorTool.SELECT -> {
