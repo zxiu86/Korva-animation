@@ -794,7 +794,7 @@ fun CanvasViewport(
                         // 2. Synchronized Rotating Element Bounding Box
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
-                            rotate(geo.rotationDeg)
+                            rotate(geo.rotationDeg, Offset.Zero)
                         }) {
                             drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTL, geo.pTR, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
                             drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTR, geo.pBR, strokeWidth = 1.8f, pathEffect = ViewportPathEngine.dashEffect)
@@ -893,7 +893,7 @@ fun CanvasViewport(
                         // EXCLUSIVE MOVE & SELECTION GIZMO
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
-                            rotate(geo.rotationDeg)
+                            rotate(geo.rotationDeg, Offset.Zero)
                         }) {
                             // Primary Bounding Box
                             drawLine(KorvaVioletPrimary, geo.pTL, geo.pTR, strokeWidth = 2.2f, pathEffect = ViewportPathEngine.dashEffect)
@@ -923,7 +923,7 @@ fun CanvasViewport(
                         // EXCLUSIVE SCALE GIZMO
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
-                            rotate(geo.rotationDeg)
+                            rotate(geo.rotationDeg, Offset.Zero)
                         }) {
                             drawLine(StudioOrange, geo.pTL, geo.pTR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
                             drawLine(StudioOrange, geo.pTR, geo.pBR, strokeWidth = 2f, pathEffect = ViewportPathEngine.dashEffect)
@@ -947,7 +947,7 @@ fun CanvasViewport(
                         // PIVOT ANCHOR GIZMO
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
-                            rotate(geo.rotationDeg)
+                            rotate(geo.rotationDeg, Offset.Zero)
                         }) {
                             drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTL, geo.pTR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
                             drawLine(StudioCyan.copy(alpha = 0.5f), geo.pTR, geo.pBR, strokeWidth = 1.5f, pathEffect = ViewportPathEngine.dashEffect)
@@ -966,7 +966,7 @@ fun CanvasViewport(
                         // HAND PAN: Minimal subtle outline
                         withTransform({
                             translate(geo.origin.x, geo.origin.y)
-                            rotate(geo.rotationDeg)
+                            rotate(geo.rotationDeg, Offset.Zero)
                         }) {
                             drawLine(Color.White.copy(alpha = 0.25f), geo.pTL, geo.pTR, strokeWidth = 1f)
                             drawLine(Color.White.copy(alpha = 0.25f), geo.pTR, geo.pBR, strokeWidth = 1f)
@@ -1085,6 +1085,50 @@ fun CanvasViewport(
                         isActive = canvasBgMode != 0,
                         onClick = { viewModel.cycleCanvasBg() }
                     )
+
+                    if (selectedLayer != null) {
+                        Box(
+                            modifier = Modifier
+                                .height(16.dp)
+                                .width(1.dp)
+                                .background(StudioBorder)
+                                .padding(horizontal = 1.dp)
+                        )
+
+                        // Quick Flip Horizontal (تغيير اتجاه العنصر يمين إلى يسار)
+                        Surface(
+                            color = StudioSurfaceDark,
+                            shape = RoundedCornerShape(5.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, KorvaVioletPrimary.copy(alpha = 0.6f)),
+                            modifier = Modifier.clickable { viewModel.flipLayerHorizontal() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(Icons.Default.Flip, contentDescription = "Flip Horizontal", tint = KorvaVioletLight, modifier = Modifier.size(13.dp))
+                                Text("Flip H ↔", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Quick Flip Vertical
+                        Surface(
+                            color = StudioSurfaceDark,
+                            shape = RoundedCornerShape(5.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder),
+                            modifier = Modifier.clickable { viewModel.flipLayerVertical() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(Icons.Default.SwapVert, contentDescription = "Flip Vertical", tint = TextSecondary, modifier = Modifier.size(13.dp))
+                                Text("Flip V ↕", color = TextSecondary, fontSize = 9.sp)
+                            }
+                        }
+                    }
                 }
 
                 // Right: Zoom controls
@@ -1214,7 +1258,7 @@ private fun DrawScope.drawProjectLayers(
 
         withTransform({
             translate(geo.origin.x, geo.origin.y)
-            rotate(geo.rotationDeg)
+            rotate(geo.rotationDeg, Offset.Zero)
             scale(transform.scaleX, transform.scaleY, Offset.Zero)
         }) {
             val drawAlpha = if (tintOverride != null) tintOverride.alpha else transform.opacity

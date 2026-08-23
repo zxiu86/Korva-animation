@@ -307,7 +307,7 @@ private fun PropertiesTabContent(
             )
         }
 
-        // Quick Scale Presets (0.5x, 1x, 1.5x, 2x, Flip X, Flip Y)
+        // Quick Scale Presets (0.5x, 1x, 1.5x, 2x)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -326,25 +326,48 @@ private fun PropertiesTabContent(
                     }
                 }
             }
-            // Flip Horizontal & Vertical
+        }
+
+        // Dedicated Flip Direction Controls (يمين / يسار و أعلى / أسفل)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Surface(
                 color = StudioSurfaceDark,
-                shape = RoundedCornerShape(4.dp),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder),
-                modifier = Modifier.clickable { viewModel.flipLayerHorizontal() }
+                shape = RoundedCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, KorvaVioletPrimary.copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { viewModel.flipLayerHorizontal() }
             ) {
-                Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)) {
-                    Icon(Icons.Default.Flip, contentDescription = "Flip H", tint = TextSecondary, modifier = Modifier.size(12.dp))
+                Row(
+                    modifier = Modifier.padding(vertical = 5.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Flip, contentDescription = "Flip Horizontal", tint = KorvaVioletLight, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Flip H (↔)", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
+
             Surface(
                 color = StudioSurfaceDark,
-                shape = RoundedCornerShape(4.dp),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder),
-                modifier = Modifier.clickable { viewModel.flipLayerVertical() }
+                shape = RoundedCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, StudioBorder),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { viewModel.flipLayerVertical() }
             ) {
-                Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)) {
-                    Icon(Icons.Default.SwapVert, contentDescription = "Flip V", tint = TextSecondary, modifier = Modifier.size(12.dp))
+                Row(
+                    modifier = Modifier.padding(vertical = 5.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.SwapVert, contentDescription = "Flip Vertical", tint = TextSecondary, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Flip V (↕)", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

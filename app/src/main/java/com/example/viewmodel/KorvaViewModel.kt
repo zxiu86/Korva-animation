@@ -936,15 +936,21 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     fun flipLayerHorizontal() {
         val layer = getSelectedLayer() ?: return
         if (layer.isLocked) return
+        pushUndoState()
         val currentTransform = EasingFunctions.evaluateLayerAtFrame(layer, _currentFrame.value)
-        addOrUpdateKeyframeOnCurrentFrame(scaleX = -currentTransform.scaleX)
+        val newScaleX = -currentTransform.scaleX
+        addOrUpdateKeyframeOnCurrentFrame(scaleX = newScaleX)
+        postStatus("Flipped ${layer.name} Horizontally (↔)")
     }
 
     fun flipLayerVertical() {
         val layer = getSelectedLayer() ?: return
         if (layer.isLocked) return
+        pushUndoState()
         val currentTransform = EasingFunctions.evaluateLayerAtFrame(layer, _currentFrame.value)
-        addOrUpdateKeyframeOnCurrentFrame(scaleY = -currentTransform.scaleY)
+        val newScaleY = -currentTransform.scaleY
+        addOrUpdateKeyframeOnCurrentFrame(scaleY = newScaleY)
+        postStatus("Flipped ${layer.name} Vertically (↕)")
     }
 
     fun centerSelectedLayer() {
