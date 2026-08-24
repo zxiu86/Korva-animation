@@ -133,6 +133,15 @@ fun StudioTopBar(
                                 .background(StudioCyan.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
                                 .padding(horizontal = 3.dp, vertical = 1.dp)
                         )
+                        Text(
+                            text = "v2.0",
+                            color = StudioGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 8.5.sp,
+                            modifier = Modifier
+                                .background(StudioGreen.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
                     }
                     Text(
                         text = project.name,

@@ -293,6 +293,240 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         vfxEngine.setEffectTarget(updated)
     }
 
+    fun updateVFXTimeScale(scale: Float) {
+        val effect = _currentVFXEffect.value
+        effect.timeScale = scale.coerceIn(0.1f, 3.0f)
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
+    }
+
+    fun prewarmVFX(warmSeconds: Float = 1.0f) {
+        vfxEngine.prewarm(warmSeconds)
+        postStatus("Prewarmed VFX simulation ($warmSeconds s)")
+    }
+
+    fun addModuleToEmitter(index: Int, type: ModuleTypeId) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val exists = emitter.modules.any { it.typeId == type }
+            if (exists) {
+                postStatus("Module ${type.displayName} already exists on this emitter")
+                return
+            }
+            when (type) {
+                ModuleTypeId.LIFETIME -> emitter.modules.add(LifetimeModule())
+                ModuleTypeId.VELOCITY -> emitter.modules.add(VelocityModule())
+                ModuleTypeId.GRAVITY -> emitter.modules.add(GravityModule(gravity = -9.81f, damping = 0.98f))
+                ModuleTypeId.ROTATION -> emitter.modules.add(RotationModule())
+                ModuleTypeId.SCALE_OVER_LIFETIME -> emitter.modules.add(ScaleModule())
+                ModuleTypeId.COLOR_OVER_LIFETIME -> emitter.modules.add(ColorModule())
+                ModuleTypeId.ALPHA_OVER_LIFETIME -> emitter.modules.add(AlphaModule())
+                ModuleTypeId.TURBULENCE -> emitter.modules.add(TurbulenceModule(strength = 25f, frequency = 0.05f, scrollSpeed = 1.0f, useCurlNoise = true))
+                ModuleTypeId.DRAG -> emitter.modules.add(DragModule(linearDrag = 0.5f, quadraticDrag = 0.01f))
+                ModuleTypeId.VORTEX -> emitter.modules.add(VortexModule(center = Vector2(0f, 0f), vortexStrength = 50f, radialPull = 15f))
+                ModuleTypeId.ATTRACTOR -> emitter.modules.add(AttractorModule(targetPosition = Vector2(0f, 0f), strength = 60f))
+                ModuleTypeId.COLLISION -> emitter.modules.add(CollisionModule(floorY = 140f, restitution = 0.65f, friction = 0.8f))
+                ModuleTypeId.FLIPBOOK -> emitter.modules.add(FlipbookModule(columns = 4, rows = 4, totalFrames = 16, frameRate = 30f, loop = true))
+                ModuleTypeId.VELOCITY_ALIGNMENT -> emitter.modules.add(VelocityAlignmentModule(stretchFactor = 0.03f))
+                ModuleTypeId.COLOR_BY_SPEED -> emitter.modules.add(ColorBySpeedModule(minSpeed = 0f, maxSpeed = 120f))
+                ModuleTypeId.TRAIL -> emitter.modules.add(TrailModule(segmentInterval = 0.02f, trailLifetime = 0.3f, maxPoints = 16))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+            postStatus("Added Module: ${type.displayName}")
+        }
+    }
+
+    fun removeModuleFromEmitter(index: Int, type: ModuleTypeId) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val removed = emitter.modules.removeAll { it.typeId == type }
+            if (removed) {
+                val updated = effect.deepCopy()
+                _currentVFXEffect.value = updated
+                vfxEngine.setEffectTarget(updated)
+                postStatus("Removed Module: ${type.displayName}")
+            }
+        }
+    }
+
+    fun updateTurbulenceModule(index: Int, strength: Float, frequency: Float, scrollSpeed: Float, useCurl: Boolean) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val turb = emitter.findTurbulenceModule()
+            if (turb != null) {
+                turb.strength = strength
+                turb.frequency = frequency
+                turb.scrollSpeed = scrollSpeed
+                turb.useCurlNoise = useCurl
+            } else {
+                emitter.modules.add(TurbulenceModule(strength, frequency, scrollSpeed, useCurl))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateDragModule(index: Int, linearDrag: Float, quadraticDrag: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val drag = emitter.findDragModule()
+            if (drag != null) {
+                drag.linearDrag = linearDrag
+                drag.quadraticDrag = quadraticDrag
+            } else {
+                emitter.modules.add(DragModule(linearDrag, quadraticDrag))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateVortexModule(index: Int, strength: Float, radialPull: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val vortex = emitter.findVortexModule()
+            if (vortex != null) {
+                vortex.vortexStrength = strength
+                vortex.radialPull = radialPull
+            } else {
+                emitter.modules.add(VortexModule(vortexStrength = strength, radialPull = radialPull))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateAttractorModule(index: Int, targetX: Float, targetY: Float, strength: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val attr = emitter.findAttractorModule()
+            if (attr != null) {
+                attr.targetPosition.x = targetX
+                attr.targetPosition.y = targetY
+                attr.strength = strength
+            } else {
+                emitter.modules.add(AttractorModule(targetPosition = Vector2(targetX, targetY), strength = strength))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateCollisionModule(index: Int, floorY: Float, restitution: Float, friction: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val coll = emitter.findCollisionModule()
+            if (coll != null) {
+                coll.floorY = floorY
+                coll.restitution = restitution
+                coll.friction = friction
+            } else {
+                emitter.modules.add(CollisionModule(floorY, restitution, friction))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateFlipbookModule(index: Int, columns: Int, rows: Int, totalFrames: Int, fps: Float, loop: Boolean) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val flip = emitter.findFlipbookModule()
+            if (flip != null) {
+                flip.columns = columns
+                flip.rows = rows
+                flip.totalFrames = totalFrames
+                flip.frameRate = fps
+                flip.loop = loop
+            } else {
+                emitter.modules.add(FlipbookModule(columns, rows, totalFrames, fps, loop))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateVelocityAlignmentModule(index: Int, stretchFactor: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val align = emitter.findVelocityAlignmentModule()
+            if (align != null) {
+                align.stretchFactor = stretchFactor
+            } else {
+                emitter.modules.add(VelocityAlignmentModule(stretchFactor))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateColorBySpeedModule(index: Int, minSpeed: Float, maxSpeed: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val spd = emitter.findColorBySpeedModule()
+            if (spd != null) {
+                spd.minSpeed = minSpeed
+                spd.maxSpeed = maxSpeed
+            } else {
+                emitter.modules.add(ColorBySpeedModule(minSpeed = minSpeed, maxSpeed = maxSpeed))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateTrailModule(index: Int, segmentInterval: Float, trailLifetime: Float, maxPoints: Int) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            val trail = emitter.findTrailModule()
+            if (trail != null) {
+                trail.segmentInterval = segmentInterval
+                trail.trailLifetime = trailLifetime
+                trail.maxPoints = maxPoints
+            } else {
+                emitter.modules.add(TrailModule(segmentInterval, trailLifetime, maxPoints))
+            }
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateSubEmitters(index: Int, onBirth: Int, onDeath: Int, onCollision: Int) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            val emitter = effect.emitters[index]
+            emitter.onBirthSubEmitter = onBirth
+            emitter.onDeathSubEmitter = onDeath
+            emitter.onCollisionSubEmitter = onCollision
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
     fun updateEmitterSpawnRate(index: Int, rate: Float) {
         val effect = _currentVFXEffect.value
         if (index in 0 until effect.emitters.size) {

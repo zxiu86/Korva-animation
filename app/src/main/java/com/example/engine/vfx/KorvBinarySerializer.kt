@@ -2,20 +2,18 @@ package com.example.engine.vfx
 
 import com.example.model.vfx.*
 import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.CRC32
 
 /**
  * High-Performance .korv Binary Serializer and Deserializer
- * Strict implementation conforming to Korva Animation VFX Specification 1.0.
+ * Strict implementation conforming to Korva Animation VFX Specification 1.10 (Engine 2.0).
  */
 object KorvBinarySerializer {
 
     private const val MAGIC = "KORV"
-    private const val VERSION: Short = 0x0100
+    private const val VERSION: Short = 0x0110
     private const val CONTENT_TYPE_VFX: Byte = 0x02
     private const val END_MARKER: Long = 0xDEADBEEF
 
@@ -23,8 +21,7 @@ object KorvBinarySerializer {
      * Serializes a VFXEffect into binary .korv format bytes.
      */
     fun serialize(effect: VFXEffect): ByteArray {
-        val stream = ByteArrayOutputStream()
-        val buffer = ByteBuffer.allocate(1024 * 64).order(ByteOrder.LITTLE_ENDIAN)
+        val buffer = ByteBuffer.allocate(1024 * 128).order(ByteOrder.LITTLE_ENDIAN)
 
         // 1. File Header (16 bytes)
         buffer.put(MAGIC.toByteArray(Charsets.US_ASCII)) // 4 bytes
@@ -56,6 +53,8 @@ object KorvBinarySerializer {
         buffer.put(verBytes)
 
         buffer.putFloat(effect.duration)
+        buffer.put(effect.blendMode.id.toByte())
+        buffer.putFloat(effect.timeScale)
         buffer.put(effect.emitters.size.toByte())
 
         // 3. Emitters
@@ -77,16 +76,33 @@ object KorvBinarySerializer {
             buffer.putFloat(emitter.speedMax)
             buffer.putFloat(emitter.spreadAngle)
 
+            // Sub-Emitter Links (6 bytes)
+            buffer.putShort(emitter.onBirthSubEmitter.toShort())
+            buffer.putShort(emitter.onDeathSubEmitter.toShort())
+            buffer.putShort(emitter.onCollisionSubEmitter.toShort())
+
             // Modules
             buffer.putShort(emitter.modules.size.toShort())
             for (module in emitter.modules) {
                 when (module) {
+                    is LifetimeModule -> {
+                        buffer.put(ModuleTypeId.LIFETIME.id.toByte())
+                        buffer.putShort(0.toShort())
+                    }
+                    is VelocityModule -> {
+                        buffer.put(ModuleTypeId.VELOCITY.id.toByte())
+                        buffer.putShort(0.toShort())
+                    }
                     is GravityModule -> {
                         buffer.put(ModuleTypeId.GRAVITY.id.toByte())
                         buffer.putShort(12.toShort()) // Data length: 12 bytes
                         buffer.putFloat(module.gravity)
                         buffer.putFloat(module.damping)
                         buffer.putFloat(0.0f) // Reserved
+                    }
+                    is RotationModule -> {
+                        buffer.put(ModuleTypeId.ROTATION.id.toByte())
+                        buffer.putShort(0.toShort())
                     }
                     is ScaleModule -> {
                         buffer.put(ModuleTypeId.SCALE_OVER_LIFETIME.id.toByte())
@@ -125,17 +141,79 @@ object KorvBinarySerializer {
                             buffer.putFloat(kf.value)
                         }
                     }
-                    is LifetimeModule -> {
-                        buffer.put(ModuleTypeId.LIFETIME.id.toByte())
-                        buffer.putShort(0.toShort())
+                    is TurbulenceModule -> {
+                        buffer.put(ModuleTypeId.TURBULENCE.id.toByte())
+                        buffer.putShort(13.toShort())
+                        buffer.putFloat(module.strength)
+                        buffer.putFloat(module.frequency)
+                        buffer.putFloat(module.scrollSpeed)
+                        buffer.put(if (module.useCurlNoise) 1.toByte() else 0.toByte())
                     }
-                    is VelocityModule -> {
-                        buffer.put(ModuleTypeId.VELOCITY.id.toByte())
-                        buffer.putShort(0.toShort())
+                    is DragModule -> {
+                        buffer.put(ModuleTypeId.DRAG.id.toByte())
+                        buffer.putShort(8.toShort())
+                        buffer.putFloat(module.linearDrag)
+                        buffer.putFloat(module.quadraticDrag)
                     }
-                    is RotationModule -> {
-                        buffer.put(ModuleTypeId.ROTATION.id.toByte())
-                        buffer.putShort(0.toShort())
+                    is VortexModule -> {
+                        buffer.put(ModuleTypeId.VORTEX.id.toByte())
+                        buffer.putShort(16.toShort())
+                        buffer.putFloat(module.center.x)
+                        buffer.putFloat(module.center.y)
+                        buffer.putFloat(module.vortexStrength)
+                        buffer.putFloat(module.radialPull)
+                    }
+                    is AttractorModule -> {
+                        buffer.put(ModuleTypeId.ATTRACTOR.id.toByte())
+                        buffer.putShort(12.toShort())
+                        buffer.putFloat(module.targetPosition.x)
+                        buffer.putFloat(module.targetPosition.y)
+                        buffer.putFloat(module.strength)
+                    }
+                    is CollisionModule -> {
+                        buffer.put(ModuleTypeId.COLLISION.id.toByte())
+                        buffer.putShort(12.toShort())
+                        buffer.putFloat(module.floorY)
+                        buffer.putFloat(module.restitution)
+                        buffer.putFloat(module.friction)
+                    }
+                    is FlipbookModule -> {
+                        buffer.put(ModuleTypeId.FLIPBOOK.id.toByte())
+                        buffer.putShort(13.toShort())
+                        buffer.putShort(module.columns.toShort())
+                        buffer.putShort(module.rows.toShort())
+                        buffer.putShort(module.totalFrames.toShort())
+                        buffer.putFloat(module.frameRate)
+                        buffer.put(if (module.loop) 1.toByte() else 0.toByte())
+                    }
+                    is VelocityAlignmentModule -> {
+                        buffer.put(ModuleTypeId.VELOCITY_ALIGNMENT.id.toByte())
+                        buffer.putShort(4.toShort())
+                        buffer.putFloat(module.stretchFactor)
+                    }
+                    is ColorBySpeedModule -> {
+                        buffer.put(ModuleTypeId.COLOR_BY_SPEED.id.toByte())
+                        val gradDataLen = 1 + 2 + module.gradient.keys.size * 8
+                        buffer.putShort((gradDataLen + 8).toShort())
+                        buffer.put(module.gradient.interpolation.id.toByte())
+                        buffer.putShort(module.gradient.keys.size.toShort())
+                        for (key in module.gradient.keys) {
+                            buffer.putFloat(key.time)
+                            buffer.put(key.color.r.toByte())
+                            buffer.put(key.color.g.toByte())
+                            buffer.put(key.color.b.toByte())
+                            val alphaByte = (key.color.a.coerceIn(0f, 1f) * 255).toInt().toByte()
+                            buffer.put(alphaByte)
+                        }
+                        buffer.putFloat(module.minSpeed)
+                        buffer.putFloat(module.maxSpeed)
+                    }
+                    is TrailModule -> {
+                        buffer.put(ModuleTypeId.TRAIL.id.toByte())
+                        buffer.putShort(10.toShort())
+                        buffer.putFloat(module.segmentInterval)
+                        buffer.putFloat(module.trailLifetime)
+                        buffer.putShort(module.maxPoints.toShort())
                     }
                 }
             }
@@ -239,6 +317,14 @@ object KorvBinarySerializer {
         val verStr = String(verBytes, Charsets.UTF_8).trimEnd('\u0000')
 
         val duration = buffer.float
+        var blendMode = BlendMode.ADDITIVE
+        var timeScale = 1.0f
+
+        if (version >= 0x0110) {
+            blendMode = BlendMode.fromId(buffer.get().toInt() and 0xFF)
+            timeScale = buffer.float
+        }
+
         val emitterCount = buffer.get().toInt() and 0xFF
 
         val effect = VFXEffect(
@@ -247,7 +333,8 @@ object KorvBinarySerializer {
             version = verStr,
             duration = duration,
             looping = looping,
-            blendMode = BlendMode.ADDITIVE
+            blendMode = blendMode,
+            timeScale = timeScale
         )
 
         // Emitters
@@ -270,6 +357,16 @@ object KorvBinarySerializer {
             val speedMax = buffer.float
             val spreadAngle = buffer.float
 
+            var onBirth = -1
+            var onDeath = -1
+            var onCollision = -1
+
+            if (version >= 0x0110) {
+                onBirth = buffer.short.toInt()
+                onDeath = buffer.short.toInt()
+                onCollision = buffer.short.toInt()
+            }
+
             val emitter = VFXEmitter(
                 name = emitterName,
                 shapeType = shapeType,
@@ -280,7 +377,10 @@ object KorvBinarySerializer {
                 particleLifetime = lifetime,
                 speedMin = speedMin,
                 speedMax = speedMax,
-                spreadAngle = spreadAngle
+                spreadAngle = spreadAngle,
+                onBirthSubEmitter = onBirth,
+                onDeathSubEmitter = onDeath,
+                onCollisionSubEmitter = onCollision
             )
 
             // Modules
@@ -289,12 +389,15 @@ object KorvBinarySerializer {
                 val modType = ModuleTypeId.fromId(buffer.get().toInt() and 0xFF)
                 val dataLen = buffer.short.toInt() and 0xFFFF
                 when (modType) {
+                    ModuleTypeId.LIFETIME -> emitter.modules.add(LifetimeModule())
+                    ModuleTypeId.VELOCITY -> emitter.modules.add(VelocityModule())
                     ModuleTypeId.GRAVITY -> {
                         val gravity = buffer.float
                         val damping = buffer.float
                         buffer.float // Reserved
                         emitter.modules.add(GravityModule(gravity, damping))
                     }
+                    ModuleTypeId.ROTATION -> emitter.modules.add(RotationModule())
                     ModuleTypeId.SCALE_OVER_LIFETIME -> {
                         val interp = InterpolationType.fromId(buffer.get().toInt() and 0xFF)
                         val kfCount = buffer.short.toInt() and 0xFFFF
@@ -331,9 +434,71 @@ object KorvBinarySerializer {
                         }
                         emitter.modules.add(AlphaModule(curve))
                     }
-                    ModuleTypeId.LIFETIME -> emitter.modules.add(LifetimeModule())
-                    ModuleTypeId.VELOCITY -> emitter.modules.add(VelocityModule())
-                    ModuleTypeId.ROTATION -> emitter.modules.add(RotationModule())
+                    ModuleTypeId.TURBULENCE -> {
+                        val str = buffer.float
+                        val freq = buffer.float
+                        val spd = buffer.float
+                        val useCurl = buffer.get() != 0.toByte()
+                        emitter.modules.add(TurbulenceModule(str, freq, spd, useCurl))
+                    }
+                    ModuleTypeId.DRAG -> {
+                        val linear = buffer.float
+                        val quad = buffer.float
+                        emitter.modules.add(DragModule(linear, quad))
+                    }
+                    ModuleTypeId.VORTEX -> {
+                        val cx = buffer.float
+                        val cy = buffer.float
+                        val str = buffer.float
+                        val pull = buffer.float
+                        emitter.modules.add(VortexModule(Vector2(cx, cy), str, pull))
+                    }
+                    ModuleTypeId.ATTRACTOR -> {
+                        val tx = buffer.float
+                        val ty = buffer.float
+                        val str = buffer.float
+                        emitter.modules.add(AttractorModule(Vector2(tx, ty), str))
+                    }
+                    ModuleTypeId.COLLISION -> {
+                        val fy = buffer.float
+                        val rest = buffer.float
+                        val frict = buffer.float
+                        emitter.modules.add(CollisionModule(fy, rest, frict))
+                    }
+                    ModuleTypeId.FLIPBOOK -> {
+                        val cols = buffer.short.toInt() and 0xFFFF
+                        val rows = buffer.short.toInt() and 0xFFFF
+                        val frames = buffer.short.toInt() and 0xFFFF
+                        val fps = buffer.float
+                        val loop = buffer.get() != 0.toByte()
+                        emitter.modules.add(FlipbookModule(cols, rows, frames, fps, loop))
+                    }
+                    ModuleTypeId.VELOCITY_ALIGNMENT -> {
+                        val stretch = buffer.float
+                        emitter.modules.add(VelocityAlignmentModule(stretch))
+                    }
+                    ModuleTypeId.COLOR_BY_SPEED -> {
+                        val interp = InterpolationType.fromId(buffer.get().toInt() and 0xFF)
+                        val keyCount = buffer.short.toInt() and 0xFFFF
+                        val gradient = VFXGradient(interpolation = interp)
+                        for (k in 0 until keyCount) {
+                            val time = buffer.float
+                            val r = buffer.get().toInt() and 0xFF
+                            val g = buffer.get().toInt() and 0xFF
+                            val b = buffer.get().toInt() and 0xFF
+                            val a = (buffer.get().toInt() and 0xFF).toFloat() / 255f
+                            gradient.keys.add(GradientColorKey(time, ColorRGBA(r, g, b, a)))
+                        }
+                        val minSpd = buffer.float
+                        val maxSpd = buffer.float
+                        emitter.modules.add(ColorBySpeedModule(gradient, minSpd, maxSpd))
+                    }
+                    ModuleTypeId.TRAIL -> {
+                        val interval = buffer.float
+                        val life = buffer.float
+                        val maxPts = buffer.short.toInt() and 0xFFFF
+                        emitter.modules.add(TrailModule(interval, life, maxPts))
+                    }
                 }
             }
 

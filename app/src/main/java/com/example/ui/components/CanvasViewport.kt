@@ -1506,8 +1506,9 @@ private fun DrawScope.drawProjectLayers(
 }
 
 /**
- * Real-Time 60/120fps Particle VFX Renderer.
- * Evaluates individual particle states from VFXSimulationEngine with Additive Blending.
+ * Real-Time 60/120fps Particle VFX Renderer (Engine 2.0).
+ * Evaluates individual particle states from VFXSimulationEngine with Ribbon Trails,
+ * Velocity Stretched Billboards, and Additive/Screen Blending.
  */
 private fun DrawScope.drawVFXParticles(
     vfxEngine: com.example.engine.vfx.VFXSimulationEngine,
@@ -1516,14 +1517,52 @@ private fun DrawScope.drawVFXParticles(
     zoom: Float
 ) {
     val particles = vfxEngine.pool.particles
-    val isAdditive = vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.ADDITIVE
+    val isAdditive = vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.ADDITIVE ||
+            vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.SCREEN
 
+    // 1. Draw Particle Ribbon Trails
+    for (p in particles) {
+        if (!p.isActive || p.trails.isEmpty()) continue
+        val trailCount = p.trails.size
+        for (i in 0 until trailCount) {
+            val pt = p.trails[i]
+            val tx = stageCenterX + pt.position.x * zoom
+            val ty = stageCenterY + pt.position.y * zoom
+            val trailRatio = (i + 1).toFloat() / trailCount.toFloat()
+            val tAlpha = (pt.color.a * p.alpha * trailRatio * 0.6f).coerceIn(0f, 1f)
+            if (tAlpha <= 0.01f) continue
+
+            val tColor = Color(
+                red = pt.color.r / 255f,
+                green = pt.color.g / 255f,
+                blue = pt.color.b / 255f,
+                alpha = tAlpha
+            )
+            val tRadius = max(pt.width * zoom * trailRatio * 0.5f, 1.5f)
+
+            if (isAdditive) {
+                drawCircle(
+                    color = tColor.copy(alpha = tAlpha * 0.35f),
+                    radius = tRadius * 1.6f,
+                    center = Offset(tx, ty)
+                )
+            }
+            drawCircle(
+                color = tColor,
+                radius = tRadius,
+                center = Offset(tx, ty)
+            )
+        }
+    }
+
+    // 2. Draw Particles with Velocity Stretch & Glow
     for (p in particles) {
         if (!p.isActive) continue
 
         val px = stageCenterX + p.position.x * zoom
         val py = stageCenterY + p.position.y * zoom
-        val sw = max(p.scale.x * zoom, 1.5f)
+        val stretchFactor = p.stretch.coerceIn(1f, 8f)
+        val sw = max(p.scale.x * zoom * stretchFactor, 1.5f)
         val sh = max(p.scale.y * zoom, 1.5f)
 
         val alpha = (p.alpha * p.color.a).coerceIn(0f, 1f)
@@ -1542,10 +1581,10 @@ private fun DrawScope.drawVFXParticles(
         }) {
             if (isAdditive) {
                 // Luminous additive glow halo
-                drawCircle(
+                drawOval(
                     color = particleColor.copy(alpha = alpha * 0.35f),
-                    radius = max(sw, sh) * 0.9f,
-                    center = Offset.Zero
+                    topLeft = Offset(-sw * 0.65f, -sh * 0.75f),
+                    size = Size(sw * 1.3f, sh * 1.5f)
                 )
             }
             drawOval(

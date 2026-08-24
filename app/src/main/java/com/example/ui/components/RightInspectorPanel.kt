@@ -31,6 +31,7 @@ import com.example.model.EasingFunctions
 import com.example.model.EasingType
 import com.example.model.vfx.*
 import com.example.data.VFXPresets
+import com.example.engine.vfx.KorvBinarySerializer
 import com.example.ui.theme.*
 import com.example.viewmodel.KorvaViewModel
 
@@ -813,6 +814,8 @@ private fun VfxTabContent(
     val selectedEmitterIndex by viewModel.selectedEmitterIndex.collectAsState()
 
     val isNativeLoaded = com.korva.engine.VFXNativeBridge.isNativeLoaded || com.example.engine.vfx.VFXNativeBridge.isNativeLoaded
+    var showAddModuleMenu by remember { mutableStateOf(false) }
+    var showHexDump by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -821,7 +824,7 @@ private fun VfxTabContent(
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Engine Status Card
+        // 1. Engine Status & Performance Card
         Surface(
             color = if (isNativeLoaded) StudioGreen.copy(alpha = 0.12f) else KorvaVioletDark.copy(alpha = 0.35f),
             shape = RoundedCornerShape(8.dp),
@@ -841,7 +844,7 @@ private fun VfxTabContent(
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = if (isNativeLoaded) "C++ JNI (arm64-v8a)" else "KOTLIN VFX ENGINE",
+                            text = if (isNativeLoaded) "KORVA CORE v2.0 (ARM64)" else "KORVA VFX ENGINE v2.0",
                             color = if (isNativeLoaded) StudioGreen else StudioCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
@@ -853,7 +856,7 @@ private fun VfxTabContent(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = "$activeParticleCount / 2048 pts",
+                            text = "$activeParticleCount pts",
                             color = KorvaVioletLight,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
@@ -862,7 +865,7 @@ private fun VfxTabContent(
                     }
                 }
 
-                // Controls Row: Play/Pause & Reset
+                // Controls Row: Play/Pause, Reset & Prewarm
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -873,7 +876,7 @@ private fun VfxTabContent(
                             containerColor = if (isSimulating) StudioOrange else KorvaVioletPrimary
                         ),
                         shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                         modifier = Modifier.weight(1f).height(28.dp)
                     ) {
                         Icon(
@@ -882,30 +885,41 @@ private fun VfxTabContent(
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(if (isSimulating) "Pause" else "Simulate", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(if (isSimulating) "Pause" else "Simulate", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
                         onClick = { viewModel.resetVFXSimulation() },
                         shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f).height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(0.9f).height(28.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("Reset", fontSize = 10.sp)
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Reset", fontSize = 9.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.prewarmVFX(1.0f) },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(0.8f).height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Whatshot, contentDescription = null, tint = StudioOrange, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Warm", fontSize = 9.sp)
                     }
                 }
             }
         }
 
-        // VFX Presets Selector
+        // 2. VFX Presets Selector
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("VFX PRESETS & CREATOR", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("VFX PRESETS (v2.0)", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Surface(
                 color = StudioCyan.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(4.dp),
@@ -923,70 +937,80 @@ private fun VfxTabContent(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        // Preset Chips Grid
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val presets = listOf(
+                "Vortex" to VFXPresets.createCosmicVortex(),
+                "Meteor" to VFXPresets.createMeteorStrike(),
+                "Arcs" to VFXPresets.createElectricArcStorm(),
                 "Fire" to VFXPresets.createFireExplosion(),
-                "Cosmic" to VFXPresets.createMagicSparkles(),
+                "Magic" to VFXPresets.createMagicSparkles(),
                 "Slash" to VFXPresets.createEnergySlash(),
-                "Gold" to VFXPresets.createGoldCoinBurst()
+                "Coins" to VFXPresets.createGoldCoinBurst()
             )
-            presets.forEach { (label, preset) ->
-                val isSelected = effect.effectId == preset.effectId
-                Surface(
-                    color = if (isSelected) KorvaVioletDark else StudioSurfaceDark,
-                    shape = RoundedCornerShape(6.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        0.5.dp,
-                        if (isSelected) KorvaVioletPrimary else StudioBorder
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { viewModel.selectVFXPreset(preset) }
+            val chunkedPresets = presets.chunked(4)
+            chunkedPresets.forEach { rowPresets ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = label,
-                        color = if (isSelected) Color.White else TextSecondary,
-                        fontSize = 9.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 5.dp)
-                    )
+                    rowPresets.forEach { (label, preset) ->
+                        val isSelected = effect.effectId == preset.effectId
+                        Surface(
+                            color = if (isSelected) KorvaVioletDark else StudioSurfaceDark,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                0.5.dp,
+                                if (isSelected) KorvaVioletPrimary else StudioBorder
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.selectVFXPreset(preset) }
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) Color.White else TextSecondary,
+                                fontSize = 8.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // Effect Global Properties
+        // 3. Global Effect Configuration
         Surface(
             color = StudioSurfaceDark,
             shape = RoundedCornerShape(8.dp),
             border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
         ) {
             Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("EFFECT CONFIGURATION", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                Text("EFFECT PROPERTIES", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Blend Mode", color = TextPrimary, fontSize = 10.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Surface(
-                            color = if (effect.blendMode == BlendMode.ADDITIVE) KorvaVioletPrimary else StudioPanelDark,
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.clickable { viewModel.updateVFXBlendMode(BlendMode.ADDITIVE) }
-                        ) {
-                            Text("Additive", color = Color.White, fontSize = 8.5.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
-                        }
-                        Surface(
-                            color = if (effect.blendMode == BlendMode.NORMAL) KorvaVioletPrimary else StudioPanelDark,
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.clickable { viewModel.updateVFXBlendMode(BlendMode.NORMAL) }
-                        ) {
-                            Text("Normal", color = Color.White, fontSize = 8.5.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                    Text("Blend Mode", color = TextPrimary, fontSize = 9.5.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        listOf(BlendMode.ADDITIVE, BlendMode.NORMAL, BlendMode.SCREEN).forEach { mode ->
+                            val isModeSelected = effect.blendMode == mode
+                            Surface(
+                                color = if (isModeSelected) KorvaVioletPrimary else StudioPanelDark,
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.clickable { viewModel.updateVFXBlendMode(mode) }
+                            ) {
+                                Text(
+                                    text = mode.displayName.split(" ").first(),
+                                    color = if (isModeSelected) Color.White else TextMuted,
+                                    fontSize = 8.sp,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -996,12 +1020,31 @@ private fun VfxTabContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Duration: ${String.format(java.util.Locale.US, "%.1f", effect.duration)}s", color = TextPrimary, fontSize = 10.sp)
+                    Text("Time Scale: ${String.format(java.util.Locale.US, "%.2f", effect.timeScale)}x", color = TextPrimary, fontSize = 9.5.sp)
+                    Slider(
+                        value = effect.timeScale,
+                        onValueChange = { viewModel.updateVFXTimeScale(it) },
+                        valueRange = 0.1f..3.0f,
+                        modifier = Modifier.width(95.dp).height(18.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = StudioCyan,
+                            activeTrackColor = StudioCyan,
+                            inactiveTrackColor = StudioBorder
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Duration: ${String.format(java.util.Locale.US, "%.1f", effect.duration)}s", color = TextPrimary, fontSize = 9.5.sp)
                     Slider(
                         value = effect.duration,
                         onValueChange = { viewModel.updateVFXDuration(it) },
                         valueRange = 0.5f..8.0f,
-                        modifier = Modifier.width(100.dp).height(20.dp),
+                        modifier = Modifier.width(95.dp).height(18.dp),
                         colors = SliderDefaults.colors(
                             thumbColor = KorvaVioletLight,
                             activeTrackColor = KorvaVioletPrimary,
@@ -1015,7 +1058,7 @@ private fun VfxTabContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Looping", color = TextPrimary, fontSize = 10.sp)
+                    Text("Looping", color = TextPrimary, fontSize = 9.5.sp)
                     Switch(
                         checked = effect.looping,
                         onCheckedChange = { viewModel.updateVFXLooping(it) },
@@ -1025,13 +1068,13 @@ private fun VfxTabContent(
                             uncheckedThumbColor = TextMuted,
                             uncheckedTrackColor = StudioPanelDark
                         ),
-                        modifier = Modifier.height(20.dp)
+                        modifier = Modifier.height(18.dp)
                     )
                 }
             }
         }
 
-        // Emitters Section
+        // 4. Emitters Section
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1069,7 +1112,7 @@ private fun VfxTabContent(
                             modifier = Modifier.clickable { viewModel.setSelectedEmitterIndex(index) }
                         ) {
                             Icon(Icons.Default.Grain, contentDescription = null, tint = KorvaVioletLight, modifier = Modifier.size(14.dp))
-                            Text(emitter.name, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(emitter.name, color = TextPrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                         }
 
                         if (effect.emitters.size > 1) {
@@ -1092,12 +1135,12 @@ private fun VfxTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Rate: ${emitter.spawnRate.toInt()}/s", color = TextSecondary, fontSize = 9.5.sp)
+                            Text("Rate: ${emitter.spawnRate.toInt()}/s", color = TextSecondary, fontSize = 9.sp)
                             Slider(
                                 value = emitter.spawnRate,
                                 onValueChange = { viewModel.updateEmitterSpawnRate(index, it) },
-                                valueRange = 10f..400f,
-                                modifier = Modifier.width(100.dp).height(18.dp),
+                                valueRange = 0f..400f,
+                                modifier = Modifier.width(95.dp).height(16.dp),
                                 colors = SliderDefaults.colors(
                                     thumbColor = KorvaVioletLight,
                                     activeTrackColor = KorvaVioletPrimary,
@@ -1112,12 +1155,12 @@ private fun VfxTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Lifetime: ${String.format(java.util.Locale.US, "%.1f", emitter.particleLifetime)}s", color = TextSecondary, fontSize = 9.5.sp)
+                            Text("Lifetime: ${String.format(java.util.Locale.US, "%.1f", emitter.particleLifetime)}s", color = TextSecondary, fontSize = 9.sp)
                             Slider(
                                 value = emitter.particleLifetime,
                                 onValueChange = { viewModel.updateEmitterLifetime(index, it) },
                                 valueRange = 0.2f..4.0f,
-                                modifier = Modifier.width(100.dp).height(18.dp),
+                                modifier = Modifier.width(95.dp).height(16.dp),
                                 colors = SliderDefaults.colors(
                                     thumbColor = KorvaVioletLight,
                                     activeTrackColor = KorvaVioletPrimary,
@@ -1132,12 +1175,12 @@ private fun VfxTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Speed: ${emitter.speedMax.toInt()} px/s", color = TextSecondary, fontSize = 9.5.sp)
+                            Text("Speed: ${emitter.speedMax.toInt()} px/s", color = TextSecondary, fontSize = 9.sp)
                             Slider(
                                 value = emitter.speedMax,
                                 onValueChange = { viewModel.updateEmitterSpeed(index, emitter.speedMin, it) },
                                 valueRange = 10f..300f,
-                                modifier = Modifier.width(100.dp).height(18.dp),
+                                modifier = Modifier.width(95.dp).height(16.dp),
                                 colors = SliderDefaults.colors(
                                     thumbColor = KorvaVioletLight,
                                     activeTrackColor = KorvaVioletPrimary,
@@ -1152,12 +1195,12 @@ private fun VfxTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Spread: ${emitter.spreadAngle.toInt()}°", color = TextSecondary, fontSize = 9.5.sp)
+                            Text("Spread: ${emitter.spreadAngle.toInt()}°", color = TextSecondary, fontSize = 9.sp)
                             Slider(
                                 value = emitter.spreadAngle,
                                 onValueChange = { viewModel.updateEmitterSpread(index, it) },
                                 valueRange = 0f..360f,
-                                modifier = Modifier.width(100.dp).height(18.dp),
+                                modifier = Modifier.width(95.dp).height(16.dp),
                                 colors = SliderDefaults.colors(
                                     thumbColor = KorvaVioletLight,
                                     activeTrackColor = KorvaVioletPrimary,
@@ -1172,12 +1215,12 @@ private fun VfxTabContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Burst: ${emitter.burstCount} pts", color = TextSecondary, fontSize = 9.5.sp)
+                            Text("Burst: ${emitter.burstCount} pts", color = TextSecondary, fontSize = 9.sp)
                             Slider(
                                 value = emitter.burstCount.toFloat(),
                                 onValueChange = { viewModel.updateEmitterBurst(index, it.toInt(), emitter.burstInterval) },
                                 valueRange = 0f..100f,
-                                modifier = Modifier.width(100.dp).height(18.dp),
+                                modifier = Modifier.width(95.dp).height(16.dp),
                                 colors = SliderDefaults.colors(
                                     thumbColor = StudioCyan,
                                     activeTrackColor = StudioCyan,
@@ -1189,7 +1232,7 @@ private fun VfxTabContent(
                         // Shape Selector Chips
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             ShapeType.entries.forEach { shape ->
                                 val isShapeSelected = emitter.shapeType == shape
@@ -1201,7 +1244,7 @@ private fun VfxTabContent(
                                         .clickable { viewModel.updateEmitterShape(index, shape) }
                                 ) {
                                     Text(
-                                        text = shape.displayName.take(4),
+                                        text = shape.displayName.take(3),
                                         color = if (isShapeSelected) Color.White else TextMuted,
                                         fontSize = 7.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1216,40 +1259,430 @@ private fun VfxTabContent(
             }
         }
 
-        // Modules: Physics & Color
+        // 5. Active Emitter Modules Controls (All 16 Modules)
+        val selectedEmitter = effect.emitters.getOrNull(selectedEmitterIndex) ?: effect.emitters.firstOrNull()
+        if (selectedEmitter != null) {
+            Surface(
+                color = StudioSurfaceDark,
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
+            ) {
+                Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ACTIVE MODULES (${selectedEmitter.modules.size})", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+
+                        Box {
+                            IconButton(
+                                onClick = { showAddModuleMenu = true },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Module", tint = StudioCyan, modifier = Modifier.size(16.dp))
+                            }
+
+                            DropdownMenu(
+                                expanded = showAddModuleMenu,
+                                onDismissRequest = { showAddModuleMenu = false },
+                                modifier = Modifier.background(StudioPanelDark)
+                            ) {
+                                val availableModules = listOf(
+                                    ModuleTypeId.TURBULENCE,
+                                    ModuleTypeId.VORTEX,
+                                    ModuleTypeId.TRAIL,
+                                    ModuleTypeId.VELOCITY_ALIGNMENT,
+                                    ModuleTypeId.COLLISION,
+                                    ModuleTypeId.DRAG,
+                                    ModuleTypeId.ATTRACTOR,
+                                    ModuleTypeId.GRAVITY,
+                                    ModuleTypeId.SCALE_OVER_LIFETIME,
+                                    ModuleTypeId.COLOR_OVER_LIFETIME,
+                                    ModuleTypeId.ALPHA_OVER_LIFETIME,
+                                    ModuleTypeId.FLIPBOOK,
+                                    ModuleTypeId.COLOR_BY_SPEED
+                                )
+                                availableModules.forEach { type ->
+                                    val isAlreadyPresent = selectedEmitter.modules.any { it.typeId == type }
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                type.displayName,
+                                                color = if (isAlreadyPresent) TextMuted else TextPrimary,
+                                                fontSize = 11.sp
+                                            )
+                                        },
+                                        onClick = {
+                                            if (!isAlreadyPresent) {
+                                                viewModel.addModuleToEmitter(selectedEmitterIndex, type)
+                                            }
+                                            showAddModuleMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Module: Gravity & Damping
+                    val gravityMod = selectedEmitter.findGravityModule()
+                    if (gravityMod != null) {
+                        ModuleCard(
+                            title = "Gravity & Damping",
+                            icon = Icons.Default.South,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.GRAVITY) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Gravity: ${gravityMod.gravity.toInt()} m/s²", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = gravityMod.gravity,
+                                    onValueChange = { viewModel.updateEmitterGravity(selectedEmitterIndex, it) },
+                                    valueRange = -50f..50f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioCyan, activeTrackColor = StudioCyan)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Turbulence & Curl Noise
+                    val turbMod = selectedEmitter.findTurbulenceModule()
+                    if (turbMod != null) {
+                        ModuleCard(
+                            title = "Turbulence (Noise)",
+                            icon = Icons.Default.Air,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.TURBULENCE) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Strength: ${turbMod.strength.toInt()}", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = turbMod.strength,
+                                    onValueChange = { viewModel.updateTurbulenceModule(selectedEmitterIndex, it, turbMod.frequency, turbMod.scrollSpeed, turbMod.useCurlNoise) },
+                                    valueRange = 0f..80f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioCyan, activeTrackColor = StudioCyan)
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Curl Noise", color = TextPrimary, fontSize = 9.sp)
+                                Switch(
+                                    checked = turbMod.useCurlNoise,
+                                    onCheckedChange = { viewModel.updateTurbulenceModule(selectedEmitterIndex, turbMod.strength, turbMod.frequency, turbMod.scrollSpeed, it) },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StudioCyan),
+                                    modifier = Modifier.height(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Vortex & Swirl
+                    val vortexMod = selectedEmitter.findVortexModule()
+                    if (vortexMod != null) {
+                        ModuleCard(
+                            title = "Vortex & Swirl",
+                            icon = Icons.Default.RotateRight,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.VORTEX) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Swirl: ${vortexMod.vortexStrength.toInt()}", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = vortexMod.vortexStrength,
+                                    onValueChange = { viewModel.updateVortexModule(selectedEmitterIndex, it, vortexMod.radialPull) },
+                                    valueRange = -150f..150f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = KorvaVioletLight, activeTrackColor = KorvaVioletPrimary)
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Inward Pull: ${vortexMod.radialPull.toInt()}", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = vortexMod.radialPull,
+                                    onValueChange = { viewModel.updateVortexModule(selectedEmitterIndex, vortexMod.vortexStrength, it) },
+                                    valueRange = 0f..60f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = KorvaVioletLight, activeTrackColor = KorvaVioletPrimary)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Attractor (Gravity Well)
+                    val attrMod = selectedEmitter.findAttractorModule()
+                    if (attrMod != null) {
+                        ModuleCard(
+                            title = "Attractor Field",
+                            icon = Icons.Default.CenterFocusStrong,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.ATTRACTOR) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Pull: ${attrMod.strength.toInt()}", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = attrMod.strength,
+                                    onValueChange = { viewModel.updateAttractorModule(selectedEmitterIndex, attrMod.targetPosition.x, attrMod.targetPosition.y, it) },
+                                    valueRange = 0f..150f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioYellow, activeTrackColor = StudioYellow)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Collision & Floor Bouncing
+                    val collMod = selectedEmitter.findCollisionModule()
+                    if (collMod != null) {
+                        ModuleCard(
+                            title = "Floor Collision",
+                            icon = Icons.Default.VerticalAlignBottom,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.COLLISION) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Floor Y: ${collMod.floorY.toInt()} px", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = collMod.floorY,
+                                    onValueChange = { viewModel.updateCollisionModule(selectedEmitterIndex, it, collMod.restitution, collMod.friction) },
+                                    valueRange = 20f..220f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioOrange, activeTrackColor = StudioOrange)
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Bounce: ${(collMod.restitution * 100).toInt()}%", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = collMod.restitution,
+                                    onValueChange = { viewModel.updateCollisionModule(selectedEmitterIndex, collMod.floorY, it, collMod.friction) },
+                                    valueRange = 0f..1.0f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioOrange, activeTrackColor = StudioOrange)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Velocity Alignment (Stretch)
+                    val alignMod = selectedEmitter.findVelocityAlignmentModule()
+                    if (alignMod != null) {
+                        ModuleCard(
+                            title = "Velocity Alignment",
+                            icon = Icons.Default.TrendingFlat,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.VELOCITY_ALIGNMENT) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Stretch: ${String.format(java.util.Locale.US, "%.3f", alignMod.stretchFactor)}", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = alignMod.stretchFactor,
+                                    onValueChange = { viewModel.updateVelocityAlignmentModule(selectedEmitterIndex, it) },
+                                    valueRange = 0.005f..0.08f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = StudioCyan, activeTrackColor = StudioCyan)
+                                )
+                            }
+                        }
+                    }
+
+                    // Module: Ribbon Trail
+                    val trailMod = selectedEmitter.findTrailModule()
+                    if (trailMod != null) {
+                        ModuleCard(
+                            title = "Ribbon Trails",
+                            icon = Icons.Default.Gesture,
+                            onRemove = { viewModel.removeModuleFromEmitter(selectedEmitterIndex, ModuleTypeId.TRAIL) }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Trail Life: ${String.format(java.util.Locale.US, "%.2f", trailMod.trailLifetime)}s", color = TextPrimary, fontSize = 9.sp)
+                                Slider(
+                                    value = trailMod.trailLifetime,
+                                    onValueChange = { viewModel.updateTrailModule(selectedEmitterIndex, trailMod.segmentInterval, it, trailMod.maxPoints) },
+                                    valueRange = 0.1f..0.8f,
+                                    modifier = Modifier.width(90.dp).height(16.dp),
+                                    colors = SliderDefaults.colors(thumbColor = KorvaVioletLight, activeTrackColor = KorvaVioletPrimary)
+                                )
+                            }
+                        }
+                    }
+
+                    // Sub-Emitters Trigger Links
+                    ModuleCard(
+                        title = "Sub-Emitter Triggers",
+                        icon = Icons.Default.AccountTree,
+                        onRemove = null
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("On Collision:", color = TextSecondary, fontSize = 9.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Surface(
+                                    color = if (selectedEmitter.onCollisionSubEmitter == -1) KorvaVioletPrimary else StudioPanelDark,
+                                    shape = RoundedCornerShape(3.dp),
+                                    modifier = Modifier.clickable { viewModel.updateSubEmitters(selectedEmitterIndex, selectedEmitter.onBirthSubEmitter, selectedEmitter.onDeathSubEmitter, -1) }
+                                ) {
+                                    Text("None", color = Color.White, fontSize = 8.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                }
+                                effect.emitters.forEachIndexed { eIdx, subE ->
+                                    if (eIdx != selectedEmitterIndex) {
+                                        val isSubSelected = selectedEmitter.onCollisionSubEmitter == eIdx
+                                        Surface(
+                                            color = if (isSubSelected) StudioOrange else StudioPanelDark,
+                                            shape = RoundedCornerShape(3.dp),
+                                            modifier = Modifier.clickable { viewModel.updateSubEmitters(selectedEmitterIndex, selectedEmitter.onBirthSubEmitter, selectedEmitter.onDeathSubEmitter, eIdx) }
+                                        ) {
+                                            Text("E$eIdx", color = Color.White, fontSize = 8.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Binary .korv Export & Live Hex Inspector
         Surface(
             color = StudioSurfaceDark,
             shape = RoundedCornerShape(8.dp),
             border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
         ) {
             Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("PHYSICS MODULES", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
-
-                val selectedEmitter = effect.emitters.getOrNull(selectedEmitterIndex) ?: effect.emitters.firstOrNull()
-                val gravityMod = selectedEmitter?.findGravityModule()
-                val currentGravity = gravityMod?.gravity ?: 0f
+                Text("BINARY .KORV SPEC 1.10", color = TextMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Gravity Y: ${currentGravity.toInt()} m/s²", color = TextPrimary, fontSize = 9.5.sp)
-                    Slider(
-                        value = currentGravity,
-                        onValueChange = {
-                            viewModel.updateEmitterGravity(selectedEmitterIndex, it)
-                        },
-                        valueRange = -50f..50f,
-                        modifier = Modifier.width(100.dp).height(18.dp),
-                        colors = SliderDefaults.colors(
-                            thumbColor = StudioCyan,
-                            activeTrackColor = StudioCyan,
-                            inactiveTrackColor = StudioBorder
-                        )
-                    )
+                    Button(
+                        onClick = { viewModel.saveKorvFileToDevice(viewModel.getApplication()) },
+                        colors = ButtonDefaults.buttonColors(containerColor = StudioCyan),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Export .korv", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = { showHexDump = !showHexDump },
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(28.dp)
+                    ) {
+                        Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(if (showHexDump) "Hide Hex" else "Inspect Hex", fontSize = 9.sp)
+                    }
+                }
+
+                if (showHexDump) {
+                    val bytes = viewModel.exportKorvBinary()
+                    val validation = KorvBinarySerializer.validate(bytes)
+                    val hexDump = KorvBinarySerializer.formatHexDump(bytes, maxLines = 10)
+
+                    Surface(
+                        color = StudioObsidianDark,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Size: ${bytes.size} bytes", color = StudioCyan, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                Text(if (validation.isValid) "CRC32 OK" else "CRC ERROR", color = if (validation.isValid) StudioGreen else StudioRed, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                text = hexDump,
+                                color = TextSecondary,
+                                fontSize = 7.5.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ModuleCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onRemove: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        color = StudioPanelDark,
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioBorder)
+    ) {
+        Column(modifier = Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(icon, contentDescription = null, tint = KorvaVioletLight, modifier = Modifier.size(12.dp))
+                    Text(title, color = TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+
+                if (onRemove != null) {
+                    IconButton(
+                        onClick = onRemove,
+                        modifier = Modifier.size(16.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextMuted, modifier = Modifier.size(11.dp))
+                    }
+                }
+            }
+            content()
         }
     }
 }
