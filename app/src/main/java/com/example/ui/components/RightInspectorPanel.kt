@@ -900,7 +900,29 @@ private fun VfxTabContent(
         }
 
         // VFX Presets Selector
-        Text("VFX PRESETS", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("VFX PRESETS & CREATOR", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Surface(
+                color = StudioCyan.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, StudioCyan),
+                modifier = Modifier.clickable { viewModel.createNewCustomVFX("Custom VFX") }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = StudioCyan, modifier = Modifier.size(10.dp))
+                    Text("New Custom", color = StudioCyan, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1099,6 +1121,66 @@ private fun VfxTabContent(
                                 colors = SliderDefaults.colors(
                                     thumbColor = KorvaVioletLight,
                                     activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Speed Max Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Speed: ${emitter.speedMax.toInt()} px/s", color = TextSecondary, fontSize = 9.5.sp)
+                            Slider(
+                                value = emitter.speedMax,
+                                onValueChange = { viewModel.updateEmitterSpeed(index, emitter.speedMin, it) },
+                                valueRange = 10f..300f,
+                                modifier = Modifier.width(100.dp).height(18.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = KorvaVioletLight,
+                                    activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Spread Angle Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Spread: ${emitter.spreadAngle.toInt()}°", color = TextSecondary, fontSize = 9.5.sp)
+                            Slider(
+                                value = emitter.spreadAngle,
+                                onValueChange = { viewModel.updateEmitterSpread(index, it) },
+                                valueRange = 0f..360f,
+                                modifier = Modifier.width(100.dp).height(18.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = KorvaVioletLight,
+                                    activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Instant Burst Count
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Burst: ${emitter.burstCount} pts", color = TextSecondary, fontSize = 9.5.sp)
+                            Slider(
+                                value = emitter.burstCount.toFloat(),
+                                onValueChange = { viewModel.updateEmitterBurst(index, it.toInt(), emitter.burstInterval) },
+                                valueRange = 0f..100f,
+                                modifier = Modifier.width(100.dp).height(18.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = StudioCyan,
+                                    activeTrackColor = StudioCyan,
                                     inactiveTrackColor = StudioBorder
                                 )
                             )

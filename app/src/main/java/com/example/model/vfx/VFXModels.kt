@@ -243,6 +243,7 @@ data class VFXParticle(
     val baseColor: ColorRGBA = ColorRGBA(),
     var alpha: Float = 1f,
     val textureRect: TextureRect = TextureRect(),
+    var emitterIndex: Int = 0,
     var isActive: Boolean = false
 ) {
     fun getLifeProgress(): Float = if (lifetime > 0f) (age / lifetime).coerceIn(0f, 1f) else 1f
@@ -266,6 +267,7 @@ data class VFXParticle(
         color.b = 255
         color.a = 1f
         alpha = 1f
+        emitterIndex = 0
         isActive = false
     }
 }
@@ -273,7 +275,7 @@ data class VFXParticle(
 /**
  * Zero-allocation memory pool manager.
  */
-class VFXParticlePool(val capacity: Int = 1000) {
+class VFXParticlePool(val capacity: Int = 1200) {
     val particles = Array(capacity) { VFXParticle() }
     var activeCount: Int = 0
         private set
@@ -329,17 +331,43 @@ data class VFXEmitter(
     fun findScaleModule(): ScaleModule? = modules.filterIsInstance<ScaleModule>().firstOrNull()
     fun findColorModule(): ColorModule? = modules.filterIsInstance<ColorModule>().firstOrNull()
     fun findAlphaModule(): AlphaModule? = modules.filterIsInstance<AlphaModule>().firstOrNull()
+
+    fun deepCopy(): VFXEmitter {
+        return copy(
+            shapeSize = shapeSize.copy(),
+            baseScaleMin = baseScaleMin.copy(),
+            baseScaleMax = baseScaleMax.copy(),
+            textureUVRect = textureUVRect.copy(),
+            modules = modules.map { mod ->
+                when (mod) {
+                    is GravityModule -> mod.copy()
+                    is ScaleModule -> ScaleModule(VFXCurve(mod.scaleCurve.interpolation, mod.scaleCurve.keyframes.map { it.copy() }.toMutableList()))
+                    is ColorModule -> ColorModule(VFXGradient(mod.colorGradient.interpolation, mod.colorGradient.keys.map { it.copy(color = it.color.copy()) }.toMutableList()))
+                    is AlphaModule -> AlphaModule(VFXCurve(mod.alphaCurve.interpolation, mod.alphaCurve.keyframes.map { it.copy() }.toMutableList()))
+                    is LifetimeModule -> LifetimeModule()
+                    is VelocityModule -> VelocityModule()
+                    is RotationModule -> RotationModule()
+                }
+            }.toMutableList()
+        )
+    }
 }
 
 /**
  * Top-level VFX Effect container managing emitters, particle pool, and playback.
  */
 data class VFXEffect(
-    var name: String = "FireExplosion",
-    var effectId: String = "fx_fire_01",
+    var name: String = "Custom Explosion",
+    var effectId: String = "fx_custom_01",
     var version: String = "1.0",
     var duration: Float = 2.0f,
     var looping: Boolean = true,
     var blendMode: BlendMode = BlendMode.ADDITIVE,
     val emitters: MutableList<VFXEmitter> = mutableListOf()
-)
+) {
+    fun deepCopy(): VFXEffect {
+        return copy(
+            emitters = emitters.map { it.deepCopy() }.toMutableList()
+        )
+    }
+}

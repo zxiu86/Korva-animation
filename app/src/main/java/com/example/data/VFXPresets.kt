@@ -194,6 +194,47 @@ object VFXPresets {
         return effect
     }
 
+    fun createEmptyBlankEffect(name: String = "Custom VFX"): VFXEffect {
+        val effect = VFXEffect(
+            name = name,
+            effectId = "fx_custom_${System.currentTimeMillis() % 10000}",
+            version = "1.0",
+            duration = 2.0f,
+            looping = true,
+            blendMode = BlendMode.ADDITIVE
+        )
+
+        val baseEmitter = VFXEmitter(
+            name = "CoreEmitter",
+            shapeType = ShapeType.CIRCLE,
+            shapeSize = Vector2(10f, 10f),
+            spawnRate = 60f,
+            particleLifetime = 1.2f,
+            speedMin = 30f,
+            speedMax = 90f,
+            spreadAngle = 360f,
+            baseScaleMin = Vector2(8f, 8f),
+            baseScaleMax = Vector2(16f, 16f)
+        )
+        baseEmitter.modules.add(GravityModule(gravity = 0f, damping = 0.98f))
+        baseEmitter.modules.add(ScaleModule(VFXCurve(interpolation = InterpolationType.CUBIC).apply {
+            addKeyframe(0.0f, 0.2f)
+            addKeyframe(0.3f, 1.2f)
+            addKeyframe(1.0f, 0.0f)
+        }))
+        baseEmitter.modules.add(AlphaModule(VFXCurve(interpolation = InterpolationType.LINEAR).apply {
+            addKeyframe(0.0f, 1.0f)
+            addKeyframe(0.7f, 0.9f)
+            addKeyframe(1.0f, 0.0f)
+        }))
+        baseEmitter.modules.add(ColorModule(VFXGradient().apply {
+            addKey(0.0f, ColorRGBA(100, 220, 255, 1.0f))
+            addKey(1.0f, ColorRGBA(255, 60, 180, 0.0f))
+        }))
+        effect.emitters.add(baseEmitter)
+        return effect
+    }
+
     val ALL_PRESETS = listOf(
         createFireExplosion(),
         createMagicSparkles(),

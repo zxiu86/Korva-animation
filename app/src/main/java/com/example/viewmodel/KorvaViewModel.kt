@@ -231,13 +231,19 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectVFXPreset(preset: VFXEffect) {
-        val cloned = preset.copy(
-            emitters = preset.emitters.map { it.copy(modules = it.modules.toMutableList()) }.toMutableList()
-        )
+        val cloned = preset.deepCopy()
         _currentVFXEffect.value = cloned
         vfxEngine.setEffectTarget(cloned)
         _selectedEmitterIndex.value = 0
         postStatus("Loaded VFX Preset: ${preset.name}")
+    }
+
+    fun createNewCustomVFX(name: String = "Custom VFX") {
+        val newEffect = VFXPresets.createEmptyBlankEffect(name)
+        _currentVFXEffect.value = newEffect
+        vfxEngine.setEffectTarget(newEffect)
+        _selectedEmitterIndex.value = 0
+        postStatus("Created New Blank VFX: $name")
     }
 
     fun setSelectedEmitterIndex(index: Int) {
@@ -249,38 +255,51 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         val idx = _selectedEmitterIndex.value
         if (idx in 0 until effect.emitters.size) {
             mutate(effect.emitters[idx])
-            vfxEngine.setEffectTarget(effect)
-            _currentVFXEffect.value = effect.copy()
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
         }
+    }
+
+    fun updateVFXName(name: String) {
+        val effect = _currentVFXEffect.value
+        effect.name = name
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
     }
 
     fun updateVFXDuration(duration: Float) {
         val effect = _currentVFXEffect.value
         effect.duration = duration.coerceIn(0.2f, 30f)
-        _currentVFXEffect.value = effect.copy()
-        vfxEngine.setEffectTarget(effect)
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
     }
 
     fun updateVFXLooping(looping: Boolean) {
         val effect = _currentVFXEffect.value
         effect.looping = looping
-        _currentVFXEffect.value = effect.copy()
-        vfxEngine.setEffectTarget(effect)
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
     }
 
     fun updateVFXBlendMode(blendMode: BlendMode) {
         val effect = _currentVFXEffect.value
         effect.blendMode = blendMode
-        _currentVFXEffect.value = effect.copy()
-        vfxEngine.setEffectTarget(effect)
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
     }
 
     fun updateEmitterSpawnRate(index: Int, rate: Float) {
         val effect = _currentVFXEffect.value
         if (index in 0 until effect.emitters.size) {
-            effect.emitters[index].spawnRate = rate.coerceIn(1f, 500f)
-            _currentVFXEffect.value = effect.copy()
-            vfxEngine.setEffectTarget(effect)
+            effect.emitters[index].spawnRate = rate.coerceIn(0f, 500f)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
         }
     }
 
@@ -288,8 +307,9 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         val effect = _currentVFXEffect.value
         if (index in 0 until effect.emitters.size) {
             effect.emitters[index].particleLifetime = lifetime.coerceIn(0.1f, 10f)
-            _currentVFXEffect.value = effect.copy()
-            vfxEngine.setEffectTarget(effect)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
         }
     }
 
@@ -297,8 +317,52 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         val effect = _currentVFXEffect.value
         if (index in 0 until effect.emitters.size) {
             effect.emitters[index].shapeType = shape
-            _currentVFXEffect.value = effect.copy()
-            vfxEngine.setEffectTarget(effect)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateEmitterSpeed(index: Int, speedMin: Float, speedMax: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].speedMin = speedMin.coerceAtLeast(0f)
+            effect.emitters[index].speedMax = speedMax.coerceAtLeast(speedMin)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateEmitterSpread(index: Int, angle: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].spreadAngle = angle.coerceIn(0f, 360f)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateEmitterBurst(index: Int, burstCount: Int, burstInterval: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].burstCount = burstCount.coerceAtLeast(0)
+            effect.emitters[index].burstInterval = burstInterval.coerceAtLeast(0.05f)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
+        }
+    }
+
+    fun updateEmitterScaleRange(index: Int, minScale: Float, maxScale: Float) {
+        val effect = _currentVFXEffect.value
+        if (index in 0 until effect.emitters.size) {
+            effect.emitters[index].baseScaleMin = Vector2(minScale, minScale)
+            effect.emitters[index].baseScaleMax = Vector2(maxScale, maxScale)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
         }
     }
 
@@ -312,8 +376,9 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 emitter.modules.add(GravityModule(gravity = gravity))
             }
-            _currentVFXEffect.value = effect.copy()
-            vfxEngine.setEffectTarget(effect)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
         }
     }
 
@@ -341,9 +406,10 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         }))
 
         effect.emitters.add(newEmitter)
-        _currentVFXEffect.value = effect.copy()
-        vfxEngine.setEffectTarget(effect)
-        _selectedEmitterIndex.value = effect.emitters.size - 1
+        val updated = effect.deepCopy()
+        _currentVFXEffect.value = updated
+        vfxEngine.setEffectTarget(updated)
+        _selectedEmitterIndex.value = updated.emitters.size - 1
         postStatus("Added Emitter: $name")
     }
 
@@ -357,8 +423,9 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         if (idx in 0 until effect.emitters.size) {
             val removed = effect.emitters.removeAt(idx)
             _selectedEmitterIndex.value = 0
-            _currentVFXEffect.value = effect.copy()
-            vfxEngine.setEffectTarget(effect)
+            val updated = effect.deepCopy()
+            _currentVFXEffect.value = updated
+            vfxEngine.setEffectTarget(updated)
             postStatus("Removed emitter: ${removed.name}")
         }
     }

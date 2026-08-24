@@ -73,7 +73,7 @@ class VFXSimulationEngine(
         }
 
         // 1. Spawning Phase
-        for (emitter in effect.emitters) {
+        effect.emitters.forEachIndexed { emitterIdx, emitter ->
             val emitterKey = emitter.id
 
             // Handle Continuous Spawning
@@ -83,7 +83,7 @@ class VFXSimulationEngine(
                 emitterSpawnAccumulators[emitterKey] = acc - spawnCount
 
                 for (i in 0 until spawnCount) {
-                    spawnParticle(emitter)
+                    spawnParticle(emitter, emitterIdx)
                 }
             }
 
@@ -93,7 +93,7 @@ class VFXSimulationEngine(
                 if (timer >= emitter.burstInterval) {
                     emitterBurstTimers[emitterKey] = timer - emitter.burstInterval
                     for (i in 0 until emitter.burstCount) {
-                        spawnParticle(emitter)
+                        spawnParticle(emitter, emitterIdx)
                     }
                 } else {
                     emitterBurstTimers[emitterKey] = timer
@@ -114,9 +114,8 @@ class VFXSimulationEngine(
 
             val progress = p.getLifeProgress()
 
-            // Find emitter modules
-            val emitter = effect.emitters.firstOrNull { it.textureAtlas == p.textureRect.toString() }
-                ?: effect.emitters.firstOrNull()
+            // Find emitter by particle's emitterIndex or fallback
+            val emitter = effect.emitters.getOrNull(p.emitterIndex) ?: effect.emitters.firstOrNull()
 
             if (emitter != null) {
                 // Apply Gravity Module
@@ -159,10 +158,11 @@ class VFXSimulationEngine(
         }
     }
 
-    private fun spawnParticle(emitter: VFXEmitter) {
+    private fun spawnParticle(emitter: VFXEmitter, emitterIndex: Int = 0) {
         val p = pool.acquire() ?: return
 
         p.reset()
+        p.emitterIndex = emitterIndex
         p.lifetime = (emitter.particleLifetime * (0.8f + Random.nextFloat() * 0.4f)).coerceAtLeast(0.1f)
         p.age = 0f
         p.isActive = true
@@ -199,18 +199,22 @@ class VFXSimulationEngine(
         }
 
         // 2. Calculate Initial Velocity and Direction
-        val spreadRad = Math.toRadians(emitter.spreadAngle.toDouble()).toFloat()
-        val baseAngle = -Math.PI.toFloat() / 2f // Upward default (-90 deg)
-        val angleOffset = (Random.nextFloat() - 0.5f) * spreadRad
-        val finalAngle = baseAngle + angleOffset
+        val finalAngle = if (emitter.spreadAngle >= 350f) {
+            Random.nextFloat() * 2f * Math.PI.toFloat()
+        } else {
+            val spreadRad = Math.toRadians(emitter.spreadAngle.toDouble()).toFloat()
+            val baseAngle = -Math.PI.toFloat() / 2f // Upward default (-90 deg)
+            val angleOffset = (Random.nextFloat() - 0.5f) * spreadRad
+            baseAngle + angleOffset
+        }
 
-        val speed = emitter.speedMin + Random.nextFloat() * (emitter.speedMax - emitter.speedMin)
+        val speed = emitter.speedMin + Random.nextFloat() * (emitter.speedMax - emitter.speedMin).coerceAtLeast(0f)
         p.velocity.x = cos(finalAngle) * speed
         p.velocity.y = sin(finalAngle) * speed
 
         // 3. Scale & Color
-        val scaleX = emitter.baseScaleMin.x + Random.nextFloat() * (emitter.baseScaleMax.x - emitter.baseScaleMin.x)
-        val scaleY = emitter.baseScaleMin.y + Random.nextFloat() * (emitter.baseScaleMax.y - emitter.baseScaleMin.y)
+        val scaleX = emitter.baseScaleMin.x + Random.nextFloat() * (emitter.baseScaleMax.x - emitter.baseScaleMin.x).coerceAtLeast(0f)
+        val scaleY = emitter.baseScaleMin.y + Random.nextFloat() * (emitter.baseScaleMax.y - emitter.baseScaleMin.y).coerceAtLeast(0f)
         p.baseScale.x = scaleX
         p.baseScale.y = scaleY
         p.scale.x = scaleX
