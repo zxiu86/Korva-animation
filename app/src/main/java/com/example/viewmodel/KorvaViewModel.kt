@@ -257,7 +257,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
             mutate(effect.emitters[idx])
             val updated = effect.deepCopy()
             _currentVFXEffect.value = updated
-            vfxEngine.setEffectTarget(updated)
+            vfxEngine.updateEffectConfiguration(updated)
         }
     }
 
@@ -266,7 +266,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         effect.name = name
         val updated = effect.deepCopy()
         _currentVFXEffect.value = updated
-        vfxEngine.setEffectTarget(updated)
+        vfxEngine.updateEffectConfiguration(updated)
     }
 
     fun updateVFXDuration(duration: Float) {
@@ -274,7 +274,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         effect.duration = duration.coerceIn(0.2f, 30f)
         val updated = effect.deepCopy()
         _currentVFXEffect.value = updated
-        vfxEngine.setEffectTarget(updated)
+        vfxEngine.updateEffectConfiguration(updated)
     }
 
     fun updateVFXLooping(looping: Boolean) {
@@ -282,7 +282,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         effect.looping = looping
         val updated = effect.deepCopy()
         _currentVFXEffect.value = updated
-        vfxEngine.setEffectTarget(updated)
+        vfxEngine.updateEffectConfiguration(updated)
     }
 
     fun updateVFXBlendMode(blendMode: BlendMode) {
@@ -290,7 +290,7 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         effect.blendMode = blendMode
         val updated = effect.deepCopy()
         _currentVFXEffect.value = updated
-        vfxEngine.setEffectTarget(updated)
+        vfxEngine.updateEffectConfiguration(updated)
     }
 
     fun updateVFXTimeScale(scale: Float) {
@@ -298,7 +298,24 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         effect.timeScale = scale.coerceIn(0.1f, 3.0f)
         val updated = effect.deepCopy()
         _currentVFXEffect.value = updated
-        vfxEngine.setEffectTarget(updated)
+        vfxEngine.updateEffectConfiguration(updated)
+    }
+
+    fun updateEmitterParticleGeometry(index: Int, geometry: ParticleGeometry) {
+        updateSelectedEmitter { it.particleGeometry = geometry }
+        postStatus("Set particle shape: ${geometry.displayName}")
+    }
+
+    fun updateEmitterTaperFactor(index: Int, factor: Float) {
+        updateSelectedEmitter { it.taperFactor = factor }
+    }
+
+    fun updateEmitterHeadThickness(index: Int, head: Float) {
+        updateSelectedEmitter { it.headThickness = head.coerceIn(0.05f, 2f) }
+    }
+
+    fun updateEmitterTailThickness(index: Int, tail: Float) {
+        updateSelectedEmitter { it.tailThickness = tail.coerceIn(0.2f, 3f) }
     }
 
     fun prewarmVFX(warmSeconds: Float = 1.0f) {
@@ -1080,6 +1097,38 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
         _project.update { it.copy(layers = currentLayers) }
         _selectedLayerId.value = newLayer.id
         postStatus("Created shape: ${kind.displayName}")
+    }
+
+    fun addVFXLayer(preset: VFXEffect? = null) {
+        pushUndoState()
+        val effectToUse = preset ?: _currentVFXEffect.value
+        val id = UUID.randomUUID().toString()
+        val newLayer = AnimationLayer(
+            id = id,
+            name = "FX: ${effectToUse.name}",
+            type = LayerType.PARTICLE_FX,
+            shapeKind = ShapeKind.CIRCLE,
+            width = 120f,
+            height = 120f,
+            zIndex = _project.value.layers.size,
+            shapeStyle = ShapeStyle(
+                fillColor = 0xFFF59E0B,
+                strokeColor = 0xFF67E8F9,
+                strokeWidth = 2f,
+                hasFill = true,
+                hasStroke = true
+            ),
+            keyframes = listOf(
+                Keyframe(frame = 0, x = -100f, y = 0f, rotation = 0f, scaleX = 1f, scaleY = 1f),
+                Keyframe(frame = 24, x = 0f, y = -60f, rotation = 45f, scaleX = 1.3f, scaleY = 1.3f),
+                Keyframe(frame = 48, x = 120f, y = 0f, rotation = 90f, scaleX = 1f, scaleY = 1f)
+            )
+        )
+        val currentLayers = _project.value.layers.toMutableList()
+        currentLayers.add(newLayer)
+        _project.update { it.copy(layers = currentLayers) }
+        _selectedLayerId.value = newLayer.id
+        postStatus("Added animated VFX track to Timeline: ${effectToUse.name}")
     }
 
     fun duplicateSelectedLayer() {

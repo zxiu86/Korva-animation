@@ -143,6 +143,21 @@ enum class ShapeType(val id: Int, val displayName: String) {
 }
 
 /**
+ * Particle geometry shape profile with support for asymmetric tapering (sharp at one end, thick at the other).
+ */
+enum class ParticleGeometry(val id: Int, val displayName: String) {
+    TAPERED_NEEDLE(0, "Tapered (Sharp / Thick)"),
+    TEARDROP(1, "Teardrop (Dart)"),
+    DIAMOND(2, "Sharp Diamond"),
+    CRESCENT(3, "Crescent Arc"),
+    ELLIPSE(4, "Standard Ellipse");
+
+    companion object {
+        fun fromId(id: Int): ParticleGeometry = entries.find { it.id == id } ?: TAPERED_NEEDLE
+    }
+}
+
+/**
  * Curve interpolation mode.
  */
 enum class InterpolationType(val id: Int, val displayName: String) {
@@ -438,7 +453,11 @@ data class VFXParticle(
     var trailTimer: Float = 0f,
     var frameIndex: Int = 0,
     var frameTimer: Float = 0f,
-    var stretch: Float = 1f
+    var stretch: Float = 1f,
+    var particleGeometry: ParticleGeometry = ParticleGeometry.TAPERED_NEEDLE,
+    var taperFactor: Float = 0.8f,
+    var headThickness: Float = 0.15f,
+    var tailThickness: Float = 1.0f
 ) {
     fun getLifeProgress(): Float = if (lifetime > 0f) (age / lifetime).coerceIn(0f, 1f) else 1f
     fun isDead(): Boolean = age >= lifetime
@@ -468,6 +487,10 @@ data class VFXParticle(
         frameIndex = 0
         frameTimer = 0f
         stretch = 1f
+        particleGeometry = ParticleGeometry.TAPERED_NEEDLE
+        taperFactor = 0.8f
+        headThickness = 0.15f
+        tailThickness = 1.0f
     }
 }
 
@@ -527,6 +550,10 @@ data class VFXEmitter(
     var onBirthSubEmitter: Int = -1,        // Index of sub-emitter spawned on particle birth
     var onDeathSubEmitter: Int = -1,        // Index of sub-emitter spawned on particle death
     var onCollisionSubEmitter: Int = -1,    // Index of sub-emitter spawned on collision
+    var particleGeometry: ParticleGeometry = ParticleGeometry.TAPERED_NEEDLE,
+    var taperFactor: Float = 0.8f,          // 0.0 = uniform, 1.0 = sharp needle tip & thick base, -1.0 = thick head & needle tail
+    var headThickness: Float = 0.15f,       // Tip width multiplier (0.05 to 1.0)
+    var tailThickness: Float = 1.0f,        // Base width multiplier (0.5 to 3.0)
     val modules: MutableList<VFXModule> = mutableListOf()
 ) {
     fun findGravityModule(): GravityModule? = modules.filterIsInstance<GravityModule>().firstOrNull()
@@ -549,6 +576,10 @@ data class VFXEmitter(
             baseScaleMin = baseScaleMin.copy(),
             baseScaleMax = baseScaleMax.copy(),
             textureUVRect = textureUVRect.copy(),
+            particleGeometry = particleGeometry,
+            taperFactor = taperFactor,
+            headThickness = headThickness,
+            tailThickness = tailThickness,
             modules = modules.map { mod ->
                 when (mod) {
                     is GravityModule -> mod.copy()

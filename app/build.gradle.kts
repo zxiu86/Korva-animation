@@ -17,8 +17,8 @@ android {
     applicationId = "com.example"
     minSdk = 24
     targetSdk = 36
-    versionCode = 10
-    versionName = "2.0"
+    versionCode = 21
+    versionName = "2.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -35,11 +35,15 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val keystoreFile = if (file("${rootDir}/release.keystore").exists()) {
+        file("${rootDir}/release.keystore")
+      } else {
+        file("${projectDir}/release.keystore")
+      }
+      storeFile = keystoreFile
+      storePassword = System.getenv("STORE_PASSWORD") ?: "korva_release_key"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "korva"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "korva_release_key"
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")

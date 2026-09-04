@@ -14,6 +14,7 @@ class VFXSimulationEngine(
     poolCapacity: Int = 1600
 ) {
     val pool = VFXParticlePool(poolCapacity)
+    val renderLock = Any()
     private val emitterSpawnAccumulators = mutableMapOf<String, Float>()
     private val emitterBurstTimers = mutableMapOf<String, Float>()
     var currentTime: Float = 0f
@@ -22,6 +23,12 @@ class VFXSimulationEngine(
     var bounds: EffectBounds = EffectBounds(-100f, -100f, 100f, 100f)
         private set
 
+    // Animated Timeline Emitter Transform Linkage
+    var timelineOffset: Vector2 = Vector2(0f, 0f)
+    var timelineScale: Vector2 = Vector2(1f, 1f)
+    var timelineRotation: Float = 0f
+    var timelineAlpha: Float = 1f
+
     val isNativeConnected: Boolean
         get() = com.korva.engine.VFXNativeBridge.isNativeLoaded || com.example.engine.vfx.VFXNativeBridge.isNativeLoaded
 
@@ -29,9 +36,28 @@ class VFXSimulationEngine(
         initEffect()
     }
 
+    fun setTimelineTransform(x: Float, y: Float, scaleX: Float, scaleY: Float, rotation: Float, alpha: Float) {
+        synchronized(renderLock) {
+            timelineOffset.x = if (x.isFinite()) x else 0f
+            timelineOffset.y = if (y.isFinite()) y else 0f
+            timelineScale.x = if (scaleX.isFinite()) scaleX.coerceAtLeast(0.01f) else 1f
+            timelineScale.y = if (scaleY.isFinite()) scaleY.coerceAtLeast(0.01f) else 1f
+            timelineRotation = if (rotation.isFinite()) rotation else 0f
+            timelineAlpha = if (alpha.isFinite()) alpha.coerceIn(0f, 1f) else 1f
+        }
+    }
+
+    fun updateEffectConfiguration(newEffect: VFXEffect) {
+        synchronized(renderLock) {
+            effect = newEffect
+        }
+    }
+
     fun setEffectTarget(newEffect: VFXEffect) {
-        effect = newEffect
-        reset()
+        synchronized(renderLock) {
+            effect = newEffect
+            reset()
+        }
     }
 
     private fun initEffect() {
@@ -45,21 +71,25 @@ class VFXSimulationEngine(
     }
 
     fun reset() {
-        pool.clear()
-        emitterSpawnAccumulators.clear()
-        emitterBurstTimers.clear()
-        currentTime = 0f
-        initEffect()
+        synchronized(renderLock) {
+            pool.clear()
+            emitterSpawnAccumulators.clear()
+            emitterBurstTimers.clear()
+            currentTime = 0f
+            initEffect()
+        }
     }
 
     /**
      * Fast-forward simulation (prewarm) to populate initial particle state.
      */
     fun prewarm(warmTimeSeconds: Float = 1.0f, step: Float = 0.016f) {
-        var elapsed = 0f
-        while (elapsed < warmTimeSeconds) {
-            update(step, isPrewarm = true)
-            elapsed += step
+        synchronized(renderLock) {
+            var elapsed = 0f
+            while (elapsed < warmTimeSeconds) {
+                updateInternal(step, isPrewarm = true)
+                elapsed += step
+            }
         }
     }
 
@@ -67,6 +97,12 @@ class VFXSimulationEngine(
      * Advance simulation by deltaTime seconds.
      */
     fun update(deltaTime: Float, isPrewarm: Boolean = false) {
+        synchronized(renderLock) {
+            updateInternal(deltaTime, isPrewarm)
+        }
+    }
+
+    private fun updateInternal(deltaTime: Float, isPrewarm: Boolean = false) {
         if (deltaTime <= 0f) return
         val dt = min(deltaTime, 0.05f) * effect.timeScale
         currentTime += dt
@@ -404,6 +440,18 @@ class VFXSimulationEngine(
         p.textureRect.uvY = emitter.textureUVRect.uvY
         p.textureRect.uvWidth = emitter.textureUVRect.uvWidth
         p.textureRect.uvHeight = emitter.textureUVRect.uvHeight
+
+        // Copy Particle Geometry & Tapering Parameters
+        p.particleGeometry = emitter.particleGeometry
+        p.taperFactor = emitter.taperFactor
+        p.headThickness = emitter.headThickness
+        p.tailThickness = emitter.tailThickness
+
+        // Apply Timeline Keyframe Origin Offset
+        if (origin == null && (timelineOffset.x != 0f || timelineOffset.y != 0f)) {
+            p.position.x += timelineOffset.x
+            p.position.y += timelineOffset.y
+        }
 
         // Trigger onBirth Sub-Emitter
         if (emitter.onBirthSubEmitter in 0 until effect.emitters.size) {

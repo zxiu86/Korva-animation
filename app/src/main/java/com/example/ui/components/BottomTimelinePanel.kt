@@ -609,12 +609,21 @@ private fun BlenderTimelineTracks(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(shapeColor)
-                            )
+                            if (layer.type == LayerType.PARTICLE_FX) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(10.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(shapeColor)
+                                )
+                            }
                             Text(
                                 text = layer.name,
                                 color = if (isSelected) Color.White else Color(0xFFCCCCCC),

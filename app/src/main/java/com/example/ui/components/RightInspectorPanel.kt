@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.AnimationLayer
 import com.example.model.EasingFunctions
 import com.example.model.EasingType
+import com.example.model.LayerType
 import com.example.model.vfx.*
 import com.example.data.VFXPresets
 import com.example.engine.vfx.KorvBinarySerializer
@@ -812,6 +813,7 @@ private fun VfxTabContent(
     val isSimulating by viewModel.isVfxSimulating.collectAsState()
     val activeParticleCount by viewModel.vfxActiveParticleCount.collectAsState()
     val selectedEmitterIndex by viewModel.selectedEmitterIndex.collectAsState()
+    val project by viewModel.project.collectAsState()
 
     val isNativeLoaded = com.korva.engine.VFXNativeBridge.isNativeLoaded || com.example.engine.vfx.VFXNativeBridge.isNativeLoaded
     var showAddModuleMenu by remember { mutableStateOf(false) }
@@ -909,6 +911,51 @@ private fun VfxTabContent(
                         Spacer(modifier = Modifier.width(2.dp))
                         Text("Warm", fontSize = 9.sp)
                     }
+                }
+            }
+        }
+
+        // 1.5. Timeline Animation Integration Card (تحريك التأثيرات بالتايم لاين)
+        Surface(
+            color = StudioSurfaceDark,
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Timeline, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(14.dp))
+                        Text("TIMELINE ANIMATION", color = TextPrimary, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    val fxCount = project.layers.count { it.type == LayerType.PARTICLE_FX }
+                    Text("$fxCount Track(s)", color = Color(0xFFF59E0B), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Text(
+                    text = "Link this VFX to a keyframed timeline track to animate its position, scale & rotation.",
+                    color = TextSecondary,
+                    fontSize = 8.5.sp,
+                    lineHeight = 11.sp
+                )
+
+                Button(
+                    onClick = { viewModel.addVFXLayer() },
+                    modifier = Modifier.fillMaxWidth().height(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Animated VFX Track", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1253,6 +1300,80 @@ private fun VfxTabContent(
                                     )
                                 }
                             }
+                        }
+
+                        // Particle Geometry / Tapering (حادة من طرف وثخينة من طرف)
+                        Spacer(Modifier.height(2.dp))
+                        Text("PARTICLE GEOMETRY & TAPERING", color = StudioCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            ParticleGeometry.entries.forEach { geom ->
+                                val isGeomSelected = emitter.particleGeometry == geom
+                                Surface(
+                                    color = if (isGeomSelected) StudioCyan else StudioPanelDark,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.updateEmitterParticleGeometry(index, geom) }
+                                ) {
+                                    Text(
+                                        text = when (geom) {
+                                            ParticleGeometry.TAPERED_NEEDLE -> "Sharp"
+                                            ParticleGeometry.TEARDROP -> "Dart"
+                                            ParticleGeometry.DIAMOND -> "Diam"
+                                            ParticleGeometry.CRESCENT -> "Arc"
+                                            ParticleGeometry.ELLIPSE -> "Oval"
+                                        },
+                                        color = if (isGeomSelected) Color.Black else TextMuted,
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Tip Sharpness (Head Thickness)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Tip Sharpness: ${String.format(java.util.Locale.US, "%.2f", emitter.headThickness)}x", color = TextSecondary, fontSize = 8.5.sp)
+                            Slider(
+                                value = emitter.headThickness,
+                                onValueChange = { viewModel.updateEmitterHeadThickness(index, it) },
+                                valueRange = 0.05f..1.5f,
+                                modifier = Modifier.width(95.dp).height(16.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = StudioCyan,
+                                    activeTrackColor = StudioCyan,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
+                        }
+
+                        // Base Thickness (Tail Thickness)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Base Thickness: ${String.format(java.util.Locale.US, "%.1f", emitter.tailThickness)}x", color = TextSecondary, fontSize = 8.5.sp)
+                            Slider(
+                                value = emitter.tailThickness,
+                                onValueChange = { viewModel.updateEmitterTailThickness(index, it) },
+                                valueRange = 0.3f..3.0f,
+                                modifier = Modifier.width(95.dp).height(16.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = KorvaVioletLight,
+                                    activeTrackColor = KorvaVioletPrimary,
+                                    inactiveTrackColor = StudioBorder
+                                )
+                            )
                         }
                     }
                 }

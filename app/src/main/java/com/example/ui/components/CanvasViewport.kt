@@ -770,13 +770,39 @@ fun CanvasViewport(
                 tintOverride = null
             )
 
-            // 9.5 Render Live 60fps VFX Particle Physics System
-            drawVFXParticles(
-                vfxEngine = viewModel.vfxEngine,
-                stageCenterX = stageCenterX,
-                stageCenterY = stageCenterY,
-                zoom = zoom
-            )
+            // 9.5 Render Live 60fps VFX Particle Physics System (With Timeline Animation Support)
+            val fxLayers = project.layers.filter { it.isVisible && it.type == LayerType.PARTICLE_FX }
+            if (fxLayers.isNotEmpty()) {
+                for (fxLayer in fxLayers) {
+                    val transform = EasingFunctions.evaluateLayerAtFrame(fxLayer, currentFrame)
+                    val fxOriginX = stageCenterX + transform.x * zoom
+                    val fxOriginY = stageCenterY + transform.y * zoom
+                    val layerScale = ((transform.scaleX + transform.scaleY) * 0.5f).coerceIn(0.1f, 5f)
+
+                    viewModel.vfxEngine.setTimelineTransform(
+                        transform.x, transform.y,
+                        transform.scaleX, transform.scaleY,
+                        transform.rotation, transform.opacity
+                    )
+
+                    drawVFXParticles(
+                        vfxEngine = viewModel.vfxEngine,
+                        stageCenterX = fxOriginX,
+                        stageCenterY = fxOriginY,
+                        zoom = zoom * layerScale,
+                        layerAlpha = transform.opacity
+                    )
+                }
+            } else {
+                viewModel.vfxEngine.setTimelineTransform(0f, 0f, 1f, 1f, 0f, 1f)
+                drawVFXParticles(
+                    vfxEngine = viewModel.vfxEngine,
+                    stageCenterX = stageCenterX,
+                    stageCenterY = stageCenterY,
+                    zoom = zoom,
+                    layerAlpha = 1f
+                )
+            }
 
             // 10. Frame Outline
             drawRect(
@@ -1353,6 +1379,28 @@ private fun DrawScope.drawProjectLayers(
             val drawAlpha = if (tintOverride != null) tintOverride.alpha else transform.opacity
             val fillColor = tintOverride ?: Color(layer.shapeStyle.fillColor).copy(alpha = drawAlpha)
 
+            if (layer.type == LayerType.PARTICLE_FX) {
+                // Ethereal glowing particle emitter indicator
+                val pulse = (sin(frame * 0.25) * 4f).toFloat()
+                drawCircle(
+                    color = Color(0xFFA855F7).copy(alpha = 0.25f * drawAlpha),
+                    radius = (26f + pulse) * zoom,
+                    center = Offset(layerLeft + layerW / 2f, layerTop + layerH / 2f)
+                )
+                drawCircle(
+                    color = Color(0xFFF59E0B).copy(alpha = 0.8f * drawAlpha),
+                    radius = 16f * zoom,
+                    center = Offset(layerLeft + layerW / 2f, layerTop + layerH / 2f),
+                    style = Stroke(width = 2f)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.9f * drawAlpha),
+                    radius = 3.5f * zoom,
+                    center = Offset(layerLeft + layerW / 2f, layerTop + layerH / 2f)
+                )
+                return@withTransform
+            }
+
             when (layer.shapeKind) {
                 ShapeKind.RECTANGLE -> {
                     drawRect(
@@ -1508,90 +1556,167 @@ private fun DrawScope.drawProjectLayers(
 /**
  * Real-Time 60/120fps Particle VFX Renderer (Engine 2.0).
  * Evaluates individual particle states from VFXSimulationEngine with Ribbon Trails,
- * Velocity Stretched Billboards, and Additive/Screen Blending.
+ * Velocity Stretched Billboards, Tapered Sharp/Thick Geometry, and Additive/Screen Blending.
  */
 private fun DrawScope.drawVFXParticles(
     vfxEngine: com.example.engine.vfx.VFXSimulationEngine,
     stageCenterX: Float,
     stageCenterY: Float,
-    zoom: Float
+    zoom: Float,
+    layerAlpha: Float = 1f
 ) {
-    val particles = vfxEngine.pool.particles
-    val isAdditive = vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.ADDITIVE ||
-            vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.SCREEN
+    try {
+        synchronized(vfxEngine.renderLock) {
+            val particles = vfxEngine.pool.particles
+            val isAdditive = vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.ADDITIVE ||
+                    vfxEngine.effect.blendMode == com.example.model.vfx.BlendMode.SCREEN
 
-    // 1. Draw Particle Ribbon Trails
-    for (p in particles) {
-        if (!p.isActive || p.trails.isEmpty()) continue
-        val trailCount = p.trails.size
-        for (i in 0 until trailCount) {
-            val pt = p.trails[i]
-            val tx = stageCenterX + pt.position.x * zoom
-            val ty = stageCenterY + pt.position.y * zoom
-            val trailRatio = (i + 1).toFloat() / trailCount.toFloat()
-            val tAlpha = (pt.color.a * p.alpha * trailRatio * 0.6f).coerceIn(0f, 1f)
-            if (tAlpha <= 0.01f) continue
+            // 1. Draw Particle Ribbon Trails
+            for (p in particles) {
+                if (!p.isActive || p.trails.isEmpty()) continue
+                val trailList = p.trails.toList()
+                val trailCount = trailList.size
+                if (trailCount == 0) continue
 
-            val tColor = Color(
-                red = pt.color.r / 255f,
-                green = pt.color.g / 255f,
-                blue = pt.color.b / 255f,
-                alpha = tAlpha
-            )
-            val tRadius = max(pt.width * zoom * trailRatio * 0.5f, 1.5f)
+                for (i in 0 until trailCount) {
+                    val pt = trailList.getOrNull(i) ?: continue
+                    val tx = stageCenterX + pt.position.x * zoom
+                    val ty = stageCenterY + pt.position.y * zoom
+                    if (!tx.isFinite() || !ty.isFinite()) continue
 
-            if (isAdditive) {
-                drawCircle(
-                    color = tColor.copy(alpha = tAlpha * 0.35f),
-                    radius = tRadius * 1.6f,
-                    center = Offset(tx, ty)
-                )
+                    val trailRatio = (i + 1).toFloat() / trailCount.toFloat()
+                    val tAlpha = (pt.color.a * p.alpha * layerAlpha * trailRatio * 0.6f).coerceIn(0f, 1f)
+                    if (tAlpha <= 0.01f) continue
+
+                    val tColor = Color(
+                        red = pt.color.r / 255f,
+                        green = pt.color.g / 255f,
+                        blue = pt.color.b / 255f,
+                        alpha = tAlpha
+                    )
+                    val tRadius = max(pt.width * zoom * trailRatio * 0.5f, 1.5f)
+
+                    if (isAdditive) {
+                        drawCircle(
+                            color = tColor.copy(alpha = tAlpha * 0.35f),
+                            radius = tRadius * 1.6f,
+                            center = Offset(tx, ty)
+                        )
+                    }
+                    drawCircle(
+                        color = tColor,
+                        radius = tRadius,
+                        center = Offset(tx, ty)
+                    )
+                }
             }
-            drawCircle(
-                color = tColor,
-                radius = tRadius,
-                center = Offset(tx, ty)
-            )
-        }
-    }
 
-    // 2. Draw Particles with Velocity Stretch & Glow
-    for (p in particles) {
-        if (!p.isActive) continue
+            // 2. Draw Particles with Velocity Stretch, Tapered Asymmetric Geometries & Glow
+            for (p in particles) {
+                if (!p.isActive) continue
 
-        val px = stageCenterX + p.position.x * zoom
-        val py = stageCenterY + p.position.y * zoom
-        val stretchFactor = p.stretch.coerceIn(1f, 8f)
-        val sw = max(p.scale.x * zoom * stretchFactor, 1.5f)
-        val sh = max(p.scale.y * zoom, 1.5f)
+                val px = stageCenterX + p.position.x * zoom
+                val py = stageCenterY + p.position.y * zoom
+                if (!px.isFinite() || !py.isFinite()) continue
 
-        val alpha = (p.alpha * p.color.a).coerceIn(0f, 1f)
-        if (alpha <= 0.01f) continue
+                val stretchFactor = if (p.stretch.isFinite()) p.stretch.coerceIn(1f, 8f) else 1f
+                val sw = max(p.scale.x * zoom * stretchFactor, 1.5f)
+                val sh = max(p.scale.y * zoom, 1.5f)
+                if (!sw.isFinite() || !sh.isFinite()) continue
 
-        val particleColor = Color(
-            red = p.color.r / 255f,
-            green = p.color.g / 255f,
-            blue = p.color.b / 255f,
-            alpha = alpha
-        )
+                val alpha = (p.alpha * p.color.a * layerAlpha).coerceIn(0f, 1f)
+                if (alpha <= 0.01f) continue
 
-        withTransform({
-            translate(px, py)
-            rotate(p.rotation, Offset.Zero)
-        }) {
-            if (isAdditive) {
-                // Luminous additive glow halo
-                drawOval(
-                    color = particleColor.copy(alpha = alpha * 0.35f),
-                    topLeft = Offset(-sw * 0.65f, -sh * 0.75f),
-                    size = Size(sw * 1.3f, sh * 1.5f)
+                val particleColor = Color(
+                    red = p.color.r / 255f,
+                    green = p.color.g / 255f,
+                    blue = p.color.b / 255f,
+                    alpha = alpha
                 )
+                val safeRotation = if (p.rotation.isFinite()) p.rotation else 0f
+
+                withTransform({
+                    translate(px, py)
+                    rotate(safeRotation, Offset.Zero)
+                }) {
+                    when (p.particleGeometry) {
+                        com.example.model.vfx.ParticleGeometry.TAPERED_NEEDLE,
+                        com.example.model.vfx.ParticleGeometry.TEARDROP -> {
+                            // User Request: "اسويها حادة من طرف ومن طرف اخر ثخينة"
+                            // Sharp tip (+halfW) and thick base (-halfW)
+                            val halfW = sw / 2f
+                            val headMul = p.headThickness.coerceIn(0.05f, 2f)
+                            val tailMul = p.tailThickness.coerceIn(0.2f, 3f)
+                            val halfTip = max(sh * headMul * 0.5f, 0.75f)
+                            val halfBase = max(sh * tailMul * 0.5f, 1.5f)
+
+                            val path = Path().apply {
+                                moveTo(-halfW, halfBase)
+                                lineTo(halfW, halfTip)
+                                if (halfTip <= 1.5f) {
+                                    lineTo(halfW + halfTip, 0f)
+                                    lineTo(halfW, -halfTip)
+                                } else {
+                                    quadraticBezierTo(halfW + halfTip * 0.8f, 0f, halfW, -halfTip)
+                                }
+                                lineTo(-halfW, -halfBase)
+                                quadraticBezierTo(-halfW - halfBase * 0.5f, 0f, -halfW, halfBase)
+                                close()
+                            }
+
+                            if (isAdditive) {
+                                drawPath(path, color = particleColor.copy(alpha = alpha * 0.35f))
+                            }
+                            drawPath(path, color = particleColor)
+                        }
+                        com.example.model.vfx.ParticleGeometry.DIAMOND -> {
+                            val halfW = sw / 2f
+                            val halfH = sh / 2f
+                            val path = Path().apply {
+                                moveTo(-halfW, 0f)
+                                lineTo(0f, -halfH)
+                                lineTo(halfW, 0f)
+                                lineTo(0f, halfH)
+                                close()
+                            }
+                            if (isAdditive) {
+                                drawPath(path, color = particleColor.copy(alpha = alpha * 0.35f))
+                            }
+                            drawPath(path, color = particleColor)
+                        }
+                        com.example.model.vfx.ParticleGeometry.CRESCENT -> {
+                            val halfW = sw / 2f
+                            val halfH = sh / 2f
+                            val path = Path().apply {
+                                moveTo(-halfW, 0f)
+                                quadraticBezierTo(0f, -halfH * 1.5f, halfW, 0f)
+                                quadraticBezierTo(0f, -halfH * 0.5f, -halfW, 0f)
+                                close()
+                            }
+                            if (isAdditive) {
+                                drawPath(path, color = particleColor.copy(alpha = alpha * 0.35f))
+                            }
+                            drawPath(path, color = particleColor)
+                        }
+                        com.example.model.vfx.ParticleGeometry.ELLIPSE -> {
+                            if (isAdditive) {
+                                drawOval(
+                                    color = particleColor.copy(alpha = alpha * 0.35f),
+                                    topLeft = Offset(-sw * 0.65f, -sh * 0.75f),
+                                    size = Size(sw * 1.3f, sh * 1.5f)
+                                )
+                            }
+                            drawOval(
+                                color = particleColor,
+                                topLeft = Offset(-sw / 2f, -sh / 2f),
+                                size = Size(sw, sh)
+                            )
+                        }
+                    }
+                }
             }
-            drawOval(
-                color = particleColor,
-                topLeft = Offset(-sw / 2f, -sh / 2f),
-                size = Size(sw, sh)
-            )
         }
+    } catch (e: Throwable) {
+        // Prevent concurrent or invalid skia state from crashing
     }
 }
