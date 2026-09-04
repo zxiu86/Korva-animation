@@ -700,13 +700,39 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveKorvFileToDevice(context: Context): String? {
+        val targetDir = getDefaultExportDirectory(context)
+        val safeName = _currentVFXEffect.value.name.replace("\\s+".toRegex(), "_").lowercase()
+        return saveKorvFileToPath(targetDir, "${safeName}.korv")
+    }
+
+    fun getDefaultExportDirectory(context: Context): File {
         return try {
+            val downloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (downloads != null && (downloads.exists() || downloads.mkdirs())) {
+                downloads
+            } else {
+                context.filesDir
+            }
+        } catch (e: Exception) {
+            context.filesDir
+        }
+    }
+
+    fun saveKorvFileToPath(targetDir: File, customFilename: String? = null): String? {
+        return try {
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
             val bytes = exportKorvBinary()
-            val safeName = _currentVFXEffect.value.name.replace("\\s+".toRegex(), "_").lowercase()
-            val filename = "${safeName}.korv"
-            val file = File(context.filesDir, filename)
+            val safeName = (_currentVFXEffect.value.name.ifBlank { "vfx_effect" }).replace("\\s+".toRegex(), "_").lowercase()
+            val filename = if (!customFilename.isNullOrBlank()) {
+                if (customFilename.endsWith(".korv")) customFilename else "$customFilename.korv"
+            } else {
+                "${safeName}.korv"
+            }
+            val file = File(targetDir, filename)
             file.writeBytes(bytes)
-            postStatus("Saved binary VFX: $filename (${bytes.size} bytes, CRC32 Verified)")
+            postStatus("Saved binary VFX to: ${file.absolutePath}")
             file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1732,15 +1758,28 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveSpriteSheetToDevice(context: Context, columns: Int = 4, step: Int = 1, frameSize: Int = 128): String? {
+        val targetDir = getDefaultExportDirectory(context)
+        val filename = "korva_spritesheet_${System.currentTimeMillis()}.png"
+        return saveSpriteSheetToPath(targetDir, filename, columns, step, frameSize)
+    }
+
+    fun saveSpriteSheetToPath(targetDir: File, customFilename: String? = null, columns: Int = 4, step: Int = 1, frameSize: Int = 128): String? {
         return try {
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+            val filename = if (!customFilename.isNullOrBlank()) {
+                if (customFilename.endsWith(".png")) customFilename else "$customFilename.png"
+            } else {
+                "korva_spritesheet_${System.currentTimeMillis()}.png"
+            }
+            val file = File(targetDir, filename)
             val bitmap = generateSpriteSheetBitmap(columns, step, frameSize)
-            val filename = "korva_spritesheet_${System.currentTimeMillis()}.png"
-            val file = File(context.cacheDir, filename)
             val stream = FileOutputStream(file)
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             stream.flush()
             stream.close()
-            postStatus("Sprite sheet generated successfully ($filename)")
+            postStatus("Sprite sheet saved to: ${file.absolutePath}")
             file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1750,18 +1789,61 @@ class KorvaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveKorFileToDevice(context: Context): String? {
+        val targetDir = getDefaultExportDirectory(context)
+        val safeName = (_project.value.name.ifBlank { "project" }).replace("\\s+".toRegex(), "_").lowercase()
+        return saveKorFileToPath(targetDir, "${safeName}.kor")
+    }
+
+    fun saveKorFileToPath(targetDir: File, customFilename: String? = null): String? {
         return try {
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
             val json = exportKorJsonString()
-            val safeName = _project.value.name.replace("\\s+".toRegex(), "_").lowercase()
-            val filename = "${safeName}.kor"
-            val file = File(context.filesDir, filename)
+            val safeName = (_project.value.name.ifBlank { "project" }).replace("\\s+".toRegex(), "_").lowercase()
+            val filename = if (!customFilename.isNullOrBlank()) {
+                if (customFilename.endsWith(".kor")) customFilename else "$customFilename.kor"
+            } else {
+                "${safeName}.kor"
+            }
+            val file = File(targetDir, filename)
             file.writeText(json)
-            postStatus("Project saved as $filename")
+            postStatus("Project saved to: ${file.absolutePath}")
             file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
-            postStatus("Error saving .kor file")
+            postStatus("Error saving .kor file: ${e.localizedMessage}")
             null
+        }
+    }
+
+    fun exportStringToUri(context: Context, uri: Uri, content: String): Boolean {
+        return try {
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(content.toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+            postStatus("Exported file to selected destination")
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            postStatus("Error exporting to selected destination: ${e.localizedMessage}")
+            false
+        }
+    }
+
+    fun exportBytesToUri(context: Context, uri: Uri, bytes: ByteArray): Boolean {
+        return try {
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(bytes)
+                os.flush()
+            }
+            postStatus("Exported binary file to selected destination")
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            postStatus("Error exporting binary to selected destination: ${e.localizedMessage}")
+            false
         }
     }
 }

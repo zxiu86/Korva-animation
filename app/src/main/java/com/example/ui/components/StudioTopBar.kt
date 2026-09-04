@@ -134,7 +134,7 @@ fun StudioTopBar(
                                 .padding(horizontal = 3.dp, vertical = 1.dp)
                         )
                         Text(
-                            text = "v2.0",
+                            text = "v1.9.5",
                             color = StudioGreen,
                             fontWeight = FontWeight.Bold,
                             fontSize = 8.5.sp,

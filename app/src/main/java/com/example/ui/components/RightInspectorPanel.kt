@@ -846,7 +846,7 @@ private fun VfxTabContent(
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = if (isNativeLoaded) "KORVA CORE v2.0 (ARM64)" else "KORVA VFX ENGINE v2.0",
+                            text = if (isNativeLoaded) "KORVA CORE v1.9.5 (ARM64)" else "KORVA VFX ENGINE v1.9.5",
                             color = if (isNativeLoaded) StudioGreen else StudioCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
@@ -966,7 +966,7 @@ private fun VfxTabContent(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("VFX PRESETS (v2.0)", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("VFX PRESETS (v1.9.5)", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Surface(
                 color = StudioCyan.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(4.dp),
